@@ -59,7 +59,11 @@ export async function POST(
   }
 
   const now = Date.now();
-  const inputSha = await sha256(raw);
+  const inputSha = await sha256(
+    payload.schema_version === "2.0.0"
+      ? `continuous-input-v1\u0000${payload.final_tick}\u0000${payload.input_b64}`
+      : raw,
+  );
   const existingBest = await database
     .prepare(
       "SELECT best_run_id, distance_cm, duration_ticks, achieved_at_ms FROM best_scores WHERE challenge_date = ? AND ruleset_id = ? AND player_id = ?",

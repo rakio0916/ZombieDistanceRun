@@ -1,4 +1,4 @@
-import { MAX_TICKS, ROAD_HALF_WIDTH_MM, type Action, type ContinuousInput, type GameEvent, type TerminalReason } from "./game-core";
+import { MAX_TICKS, ROAD_HALF_WIDTH_MM, type Action, type ContinuousInput, type GameEvent, type TerminalReason } from "./game-core.ts";
 
 const actions = new Set<Action>([
   "LANE_LEFT",
