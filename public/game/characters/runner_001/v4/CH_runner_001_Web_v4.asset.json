@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "character_id": "runner_001",
+  "release_id": "runner_001_web_v4",
+  "release_version": 4,
+  "release_status": "approved_for_public_site",
+  "source": {
+    "sha256": "0692f6d5fd5af68adf637ce923948bdedfecacf6ad779b95dc4d6e01899767fb"
+  },
+  "web_glb": {
+    "relative_path": "characters/runner_001/v4/CH_runner_001_Web_v4.glb",
+    "sha256": "29fb211f41f910a605573d5400e20f1c7907ffa7f971547ecc6ac5b04e707da9",
+    "size_bytes": 14436752,
+    "media_type": "model/gltf-binary",
+    "triangle_count": 10341,
+    "material_count": 1
+  },
+  "coordinate_system": {
+    "unit": "meter",
+    "meters_per_unit": 1,
+    "up_axis": "+Y",
+    "forward_axis": "+Z",
+    "ground_offset_m": 0
+  },
+  "collider": {
+    "profile_id": "runner_standard_v1",
+    "half_width_mm": 450,
+    "half_length_mm": 500
+  },
+  "animations": [
+    { "logical_name": "Idle", "clip_name": "Web_Idle", "loop": true, "duration_seconds": 1 },
+    { "logical_name": "Run", "clip_name": "Run_03", "loop": true, "duration_seconds": 0.833333 },
+    { "logical_name": "Jump", "clip_name": "Web_Jump", "loop": false, "duration_seconds": 0.791667 },
+    { "logical_name": "Stumble", "clip_name": "Web_Stumble", "loop": false, "duration_seconds": 0.791667 },
+    { "logical_name": "Caught", "clip_name": "Web_Caught", "loop": false, "duration_seconds": 1.166667 }
+  ],
+  "compression": {
+    "mesh": "none",
+    "textures": "embedded_png_jpeg",
+    "decoder_version": "none"
+  },
+  "licensing": {
+    "commercial_web_use_confirmed": true,
+    "attribution_required": false
+  },
+  "appearance_approval": {
+    "approved": true,
+    "target_sha256": "29fb211f41f910a605573d5400e20f1c7907ffa7f971547ecc6ac5b04e707da9"
+  },
+  "publication_approval": {
+    "approved": true,
+    "target_sha256": "29fb211f41f910a605573d5400e20f1c7907ffa7f971547ecc6ac5b04e707da9",
+    "public_distribution": true,
+    "browser_cache_and_retrieval": true,
+    "gameplay_chase_and_caught_depiction": true,
+    "record_reference": "current-thread-continuous-movement-jump-fix-publish-request",
+    "confirmed_at": "2026-09-18T20:00:00+09:00"
+  }
+}

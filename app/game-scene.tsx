@@ -2,12 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import type { AnimationAction, Group, Mesh, Object3D } from "three";
-import { getHazardsInRange, type Action, type GameState, type GeneratedHazard } from "@/lib/game-core";
+import { getHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
 
 type Phase = "ready" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
 
-const CHARACTER_URL = "/game/characters/runner_001/v3/CH_runner_001_Web_v3.glb";
+const CHARACTER_URL = "/game/characters/runner_001/v4/CH_runner_001_Web_v4.glb";
 const REQUIRED_CLIPS = ["Web_Idle", "Run_03", "Web_Jump", "Web_Stumble", "Web_Caught"] as const;
 
 export function GameScene({
@@ -15,19 +15,19 @@ export function GameScene({
   seed,
   phase,
   onCharacterStatus,
-  onAction,
+  onTargetX,
 }: {
   game: GameState;
   seed: number;
   phase: Phase;
   onCharacterStatus: (status: CharacterStatus) => void;
-  onAction: (action: Action) => void;
+  onTargetX: (targetXmm: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef(game);
   const seedRef = useRef(seed);
   const phaseRef = useRef(phase);
-  const gestureRef = useRef<{ x: number; y: number; started: number; fired: boolean } | null>(null);
+  const gestureRef = useRef<{ pointerId: number; startX: number; originXmm: number } | null>(null);
 
   useEffect(() => {
     gameRef.current = game;
@@ -138,8 +138,9 @@ export function GameScene({
       let lastWidth = 0;
       let lastHeight = 0;
 
-      const changeAnimation = (name: string) => {
-        if (name === activeClip) return;
+      let activeJumpStartTick = -1;
+      const changeAnimation = (name: string, jumpStartTick: number) => {
+        if (name === activeClip && (name !== "Web_Jump" || jumpStartTick === activeJumpStartTick)) return;
         const next = actions.get(name);
         if (!next) return;
         const fade = name === "Web_Caught" ? 0.15 : name === "Web_Stumble" ? 0.08 : 0.1;
@@ -147,6 +148,7 @@ export function GameScene({
         next.reset().setEffectiveWeight(1).fadeIn(fade).play();
         activeAction = next;
         activeClip = name;
+        activeJumpStartTick = name === "Web_Jump" ? jumpStartTick : -1;
       };
 
       const draw = () => {
@@ -177,11 +179,15 @@ export function GameScene({
               : phaseRef.current === "running"
                 ? "Run_03"
                 : "Web_Idle";
-        changeAnimation(desiredClip);
+        changeAnimation(desiredClip, current.jumpStartTick);
         mixer?.update(delta);
+        if (desiredClip === "Web_Jump" && activeAction) {
+          const phase = Math.max(0, Math.min(24, current.tick - current.jumpStartTick));
+          activeAction.time = (phase / 24) * activeAction.getClip().duration;
+        }
 
-        const laneX = (current.lanePositionMilli - 1_000) * 0.0024;
-        playerRoot.position.x += (laneX - playerRoot.position.x) * 0.28;
+        const laneX = current.xMm / 1_000;
+        playerRoot.position.x = laneX;
         const jumpPhase = current.jumpStartTick < 0 ? -1 : current.tick - current.jumpStartTick;
         playerRoot.position.y = jumpPhase >= 0 && jumpPhase <= 24
           ? Math.sin((jumpPhase / 24) * Math.PI) * 0.92
@@ -223,24 +229,19 @@ export function GameScene({
       className="zdr-canvas"
       aria-label="人物3Dが荒廃した市街地で前方ゾンビの隙間を走り抜けるゲーム画面"
       onPointerDown={(event) => {
-        gestureRef.current = { x: event.clientX, y: event.clientY, started: performance.now(), fired: false };
+        if (gestureRef.current) return;
+        gestureRef.current = { pointerId: event.pointerId, startX: event.clientX, originXmm: gameRef.current.xMm };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
         const gesture = gestureRef.current;
-        if (!gesture || gesture.fired || performance.now() - gesture.started > 350) return;
-        const dx = event.clientX - gesture.x;
-        const dy = event.clientY - gesture.y;
-        if (Math.abs(dx) >= 36 && Math.abs(dx) >= Math.abs(dy) * 1.35) {
-          gesture.fired = true;
-          onAction(dx < 0 ? "LANE_LEFT" : "LANE_RIGHT");
-        } else if (dy <= -36 && Math.abs(dy) >= Math.abs(dx) * 1.35) {
-          gesture.fired = true;
-          onAction("JUMP");
-        }
+        if (!gesture || gesture.pointerId !== event.pointerId) return;
+        const travelPx = Math.max(120, Math.min(event.currentTarget.clientWidth, event.currentTarget.clientHeight) * 0.7);
+        onTargetX(gesture.originXmm + ((event.clientX - gesture.startX) / travelPx) * 4_800);
       }}
-      onPointerUp={() => { gestureRef.current = null; }}
-      onPointerCancel={() => { gestureRef.current = null; }}
+      onPointerUp={(event) => { if (gestureRef.current?.pointerId === event.pointerId) { onTargetX(gameRef.current.xMm); gestureRef.current = null; } }}
+      onPointerCancel={(event) => { if (gestureRef.current?.pointerId === event.pointerId) { onTargetX(gameRef.current.xMm); gestureRef.current = null; } }}
+      onLostPointerCapture={() => { onTargetX(gameRef.current.xMm); gestureRef.current = null; }}
     />
   );
 }

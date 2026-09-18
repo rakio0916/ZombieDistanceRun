@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GameScene } from "./game-scene";
 import {
-  advanceGameState,
+  advanceContinuousGameState,
   createGameState,
-  type Action,
-  type GameEvent,
+  type ContinuousInput,
   type GameState,
   challengeDateInTokyo,
+  CONTINUOUS_MOVE_PER_TICK_MM,
+  ROAD_HALF_WIDTH_MM,
   RULESET_ID,
   seedForDate,
 } from "@/lib/game-core";
+import { encodeContinuousInputs } from "@/lib/game-api";
 
 type LeaderboardEntry = {
   rank: number;
@@ -26,7 +28,11 @@ type CharacterStatus = "loading" | "ready" | "error";
 
 export function GameClient({ signedIn }: { signedIn: boolean }) {
   const stateRef = useRef<GameState>(createGameState());
-  const eventsRef = useRef<GameEvent[]>([]);
+  const inputsRef = useRef<ContinuousInput[]>([]);
+  const targetXRef = useRef(0);
+  const jumpQueuedRef = useRef(false);
+  const sprintRef = useRef(false);
+  const keyboardDirectionRef = useRef<-1 | 0 | 1>(0);
   const officialRunRef = useRef<OfficialRun | null>(null);
   const timerRef = useRef<number | null>(null);
   const [phase, setPhase] = useState<Phase>("ready");
@@ -73,11 +79,11 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          schema_version: "1.0.0",
+          schema_version: "2.0.0",
           submission_id: crypto.randomUUID(),
           final_tick: final.tick,
           terminal_reason: final.terminalReason,
-          events: eventsRef.current,
+          input_b64: encodeContinuousInputs(inputsRef.current),
         }),
       });
       const data = (await response.json()) as { run?: { distance_m: number; time_limit_completed: boolean }; was_personal_best?: boolean; error?: string };
@@ -95,11 +101,14 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     setPhase("ended");
   }, [loadLeaderboard]);
 
-  const recordAction = useCallback((action: Action) => {
+  const queueJump = useCallback(() => {
     if (phaseRef.current !== "running") return;
-    const state = stateRef.current;
-    const event: GameEvent = { seq: eventsRef.current.length, tick: state.tick, action };
-    eventsRef.current = [...eventsRef.current, event];
+    jumpQueuedRef.current = true;
+  }, []);
+
+  const setTargetX = useCallback((targetXmm: number) => {
+    if (phaseRef.current !== "running") return;
+    targetXRef.current = Math.max(-ROAD_HALF_WIDTH_MM, Math.min(ROAD_HALF_WIDTH_MM, Math.round(targetXmm / 10) * 10));
   }, []);
 
   const start = useCallback(async () => {
@@ -134,14 +143,23 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     const initial = createGameState();
     setSeed(runSeed);
     stateRef.current = initial;
-    eventsRef.current = [];
+    inputsRef.current = [];
+    targetXRef.current = 0;
+    jumpQueuedRef.current = false;
+    sprintRef.current = false;
+    keyboardDirectionRef.current = 0;
     setGame(initial);
     phaseRef.current = "running";
     setPhase("running");
     timerRef.current = window.setInterval(() => {
       const current = stateRef.current;
-      const events = eventsRef.current.filter((event) => event.tick === current.tick);
-      const next = advanceGameState(current, runSeed, events);
+      if (keyboardDirectionRef.current !== 0) {
+        targetXRef.current = Math.max(-ROAD_HALF_WIDTH_MM, Math.min(ROAD_HALF_WIDTH_MM, targetXRef.current + keyboardDirectionRef.current * CONTINUOUS_MOVE_PER_TICK_MM));
+      }
+      const input: ContinuousInput = { targetXmm: targetXRef.current, jump: jumpQueuedRef.current, sprint: sprintRef.current };
+      jumpQueuedRef.current = false;
+      inputsRef.current.push(input);
+      const next = advanceContinuousGameState(current, runSeed, input);
       stateRef.current = next;
       setGame(next);
       if (next.terminalReason) void finish(next);
@@ -150,14 +168,15 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") recordAction("LANE_LEFT");
-      if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") recordAction("LANE_RIGHT");
-      if (event.key === "ArrowUp" || event.key === " ") recordAction("JUMP");
-      if (event.key === "Shift") recordAction("SPRINT_ON");
+      if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") keyboardDirectionRef.current = -1;
+      if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") keyboardDirectionRef.current = 1;
+      if (!event.repeat && (event.key === "ArrowUp" || event.key === " ")) queueJump();
+      if (event.key === "Shift") sprintRef.current = true;
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key === "Shift") recordAction("SPRINT_OFF");
+      if ((event.key === "ArrowLeft" || event.key.toLowerCase() === "a") && keyboardDirectionRef.current === -1) keyboardDirectionRef.current = 0;
+      if ((event.key === "ArrowRight" || event.key.toLowerCase() === "d") && keyboardDirectionRef.current === 1) keyboardDirectionRef.current = 0;
+      if (event.key === "Shift") sprintRef.current = false;
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -166,7 +185,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
       window.removeEventListener("keyup", onKeyUp);
       window.clearInterval(timerRef.current ?? undefined);
     };
-  }, [recordAction]);
+  }, [queueJump]);
 
   const crowdCount = 6 + 3 * Math.floor(game.distanceMm / 250_000);
   const gapPercent = Math.max(0, Math.min(100, (game.hordeGapMm / 12_000) * 100));
@@ -181,7 +200,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
           <div className="zdr-stamina"><span>スタミナ</span><i><b style={{ width: `${game.stamina}%` }} /></i></div>
           <div className="zdr-gap"><span>安全距離</span><i><b style={{ width: `${gapPercent}%` }} /></i></div>
         </div>
-        <GameScene game={game} seed={seed} phase={phase} onCharacterStatus={onCharacterStatus} onAction={recordAction} />
+        <GameScene game={game} seed={seed} phase={phase} onCharacterStatus={onCharacterStatus} onTargetX={setTargetX} />
         {characterStatus !== "ready" && (
           <div className="zdr-load-state" role="status">
             {characterStatus === "loading" ? "人物3Dと街を読み込み中…" : "人物3Dを読み込めませんでした。ページを再読み込みしてください。"}
@@ -195,10 +214,10 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
           {phase === "ended" && "走行終了"}
         </div>
         <div className="zdr-controls" aria-label="ゲーム操作">
-          <button type="button" onPointerDown={() => recordAction("LANE_LEFT")} aria-label="左へ移動">←</button>
-          <button type="button" onPointerDown={() => recordAction("JUMP")} aria-label="ジャンプ">跳</button>
-          <button type="button" onPointerDown={() => recordAction("LANE_RIGHT")} aria-label="右へ移動">→</button>
-          <button type="button" onPointerDown={() => recordAction("SPRINT_ON")} onPointerUp={() => recordAction("SPRINT_OFF")} onPointerCancel={() => recordAction("SPRINT_OFF")} aria-label="スプリント">走</button>
+          <button type="button" onPointerDown={() => { keyboardDirectionRef.current = -1; }} onPointerUp={() => { keyboardDirectionRef.current = 0; }} onPointerCancel={() => { keyboardDirectionRef.current = 0; }} aria-label="左へ移動">←</button>
+          <button type="button" onPointerDown={queueJump} aria-label="ジャンプ">跳</button>
+          <button type="button" onPointerDown={() => { keyboardDirectionRef.current = 1; }} onPointerUp={() => { keyboardDirectionRef.current = 0; }} onPointerCancel={() => { keyboardDirectionRef.current = 0; }} aria-label="右へ移動">→</button>
+          <button type="button" onPointerDown={() => { sprintRef.current = true; }} onPointerUp={() => { sprintRef.current = false; }} onPointerCancel={() => { sprintRef.current = false; }} aria-label="スプリント">走</button>
         </div>
         <button className="zdr-start" type="button" onClick={() => void start()} disabled={phase === "running" || phase === "saving" || characterStatus !== "ready"}>
           {characterStatus === "loading" ? "読み込み中" : characterStatus === "error" ? "読込エラー" : phase === "ready" ? (signedIn ? "ランク戦を開始" : "練習を開始") : "もう一度走る"}
@@ -211,8 +230,8 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
         <p className="zdr-notice">{notice}</p>
         <dl className="zdr-rules">
           <div><dt>PC</dt><dd>A / D、← / →、Space、Shift</dd></div>
-          <div><dt>スマホ</dt><dd>下の操作ボタンで走行</dd></div>
-          <div><dt>人物3D</dt><dd>{characterStatus === "ready" ? "公開版v3・5アニメーション" : characterStatus === "loading" ? "読み込み中" : "読み込みエラー"}</dd></div>
+          <div><dt>スマホ</dt><dd>画面を指で左右に動かす／跳ボタン</dd></div>
+          <div><dt>人物3D</dt><dd>{characterStatus === "ready" ? "公開版v4・5アニメーション" : characterStatus === "loading" ? "読み込み中" : "読み込みエラー"}</dd></div>
           <div><dt>ルール</dt><dd>{RULESET_ID}／射撃なし・前方を横回避</dd></div>
         </dl>
         <div className="zdr-board">

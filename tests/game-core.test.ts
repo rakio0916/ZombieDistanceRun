@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   advanceGameState,
+  advanceContinuousGameState,
   createGameState,
   getHazardsInRange,
   HAZARD_LOOKAHEAD_MM,
@@ -61,6 +62,33 @@ test("hazard generation is deterministic", () => {
     getHazardsInRange(20260918, 80_000, 800_000),
     getHazardsInRange(20260918, 80_000, 800_000),
   );
+});
+
+test("continuous movement reaches any target and stops there", () => {
+  let state = createGameState();
+  for (let tick = 0; tick < 4; tick += 1) {
+    state = advanceContinuousGameState(state, 42, { targetXmm: 730, jump: false, sprint: false });
+  }
+  assert.equal(state.xMm, 730);
+  state = advanceContinuousGameState(state, 42, { targetXmm: 730, jump: false, sprint: false });
+  assert.equal(state.xMm, 730);
+});
+
+test("continuous collision detects lateral entry while overlapping a hazard", () => {
+  const seed = 42;
+  const zombie = getHazardsInRange(seed, SAFE_START_MM, 200_000).find((hazard) => hazard.kind === "ZOMBIE");
+  assert.ok(zombie);
+  const hazardX = (zombie.lane - 1) * 2_400;
+  const state = {
+    ...createGameState(),
+    tick: 100,
+    xMm: hazardX - 1_100,
+    targetXmm: hazardX - 900,
+    distanceMm: zombie.centerMm,
+    hordeGapMm: 12_000,
+  };
+  const next = advanceContinuousGameState(state, seed, { targetXmm: hazardX - 900, jump: false, sprint: false });
+  assert.equal(next.lastContactHazardId, zombie.id);
 });
 
 function stateAtHazardEntry(state: GameState, hazard: GeneratedHazard, tick: number): GameState {

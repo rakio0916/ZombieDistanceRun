@@ -1,7 +1,7 @@
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getD1 } from "@/db";
-import { parseFinishPayload } from "@/lib/game-api";
-import { runSimulationForRuleset } from "@/lib/game-core";
+import { decodeContinuousInputs, parseFinishPayload } from "@/lib/game-api";
+import { RULESET_ID, runContinuousSimulation, runSimulationForRuleset } from "@/lib/game-core";
 
 type RunRow = {
   run_id: string;
@@ -49,7 +49,11 @@ export async function POST(
   }
   if (row.status !== "RUNNING") return json({ error: "RUN_STATE_CONFLICT" }, 409);
 
-  const result = runSimulationForRuleset(row.ruleset_id, row.seed, payload.final_tick, payload.events);
+  const result = payload.schema_version === "2.0.0" && row.ruleset_id === RULESET_ID
+    ? runContinuousSimulation(row.seed, decodeContinuousInputs(payload.input_b64, payload.final_tick) ?? [])
+    : payload.schema_version === "1.0.0" && row.ruleset_id !== RULESET_ID
+      ? runSimulationForRuleset(row.ruleset_id, row.seed, payload.final_tick, payload.events)
+      : null;
   if (!result || result.terminalReason !== payload.terminal_reason) {
     return json({ error: "RESULT_NOT_REPRODUCIBLE" }, 422);
   }
