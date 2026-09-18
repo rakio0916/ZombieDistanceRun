@@ -1,6 +1,13 @@
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getD1 } from "@/db";
-import { challengeDateInTokyo, seedForDate } from "@/lib/game-core";
+import {
+  CATALOG_VERSION,
+  challengeDateInTokyo,
+  CORE_VERSION,
+  MAX_TICKS,
+  RULESET_ID,
+  seedForDate,
+} from "@/lib/game-core";
 
 export async function POST() {
   const user = await getChatGPTUser();
@@ -52,9 +59,9 @@ export async function POST() {
   const seed = seedForDate(challengeDate);
   await database
     .prepare(
-      "INSERT INTO runs (run_id, player_id, challenge_date, seed, status, issued_at_ms, started_at_ms) VALUES (?, ?, ?, ?, 'RUNNING', ?, ?)",
+      "INSERT INTO runs (run_id, player_id, challenge_date, seed, ruleset_id, core_version, catalog_version, status, issued_at_ms, started_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?)",
     )
-    .bind(runId, player.player_id, challengeDate, seed, now, now)
+    .bind(runId, player.player_id, challengeDate, seed, RULESET_ID, CORE_VERSION, CATALOG_VERSION, now, now)
     .run();
 
   return json({
@@ -63,7 +70,10 @@ export async function POST() {
       challenge_date: challengeDate,
       seed,
       display_name: player.display_name,
-      max_ticks: 54_000,
+      max_ticks: MAX_TICKS,
+      ruleset_id: RULESET_ID,
+      core_version: CORE_VERSION,
+      catalog_version: CATALOG_VERSION,
     },
   });
 }

@@ -1,5 +1,7 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import path from "node:path";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
@@ -35,7 +37,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
   // Use Miniflare's local Request.cf placeholder unless fetching is requested.
   process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= "false";
   process.env.WRANGLER_SEND_METRICS ??= "false";
@@ -56,6 +58,7 @@ export default defineConfig(async () => {
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
     },
     plugins: [
+      localCharacterAsset(command),
       vinext(),
       sites({ mockAuth: !managedLinux }),
       cloudflare({
@@ -66,3 +69,26 @@ export default defineConfig(async () => {
     ],
   };
 });
+
+function localCharacterAsset(command: "build" | "serve") {
+  const defaultPath = path.resolve(process.cwd(), "..", "..", "Meshy_Apose_Rigged_Run_EyesFixed.glb");
+  const sourcePath = process.env.ZDR_LOCAL_CHARACTER_GLB || defaultPath;
+  return {
+    name: "zdr-local-character-asset",
+    configureServer(server: { middlewares: { use: (route: string, handler: (request: unknown, response: import("node:http").ServerResponse) => void) => void } }) {
+      if (command !== "serve") return;
+      server.middlewares.use("/__zdr-local/player.glb", (_request, response) => {
+        if (!existsSync(sourcePath)) {
+          response.statusCode = 404;
+          response.end("Local character asset is not configured.");
+          return;
+        }
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "model/gltf-binary");
+        response.setHeader("Content-Length", statSync(sourcePath).size);
+        response.setHeader("Cache-Control", "no-store");
+        createReadStream(sourcePath).pipe(response);
+      });
+    },
+  };
+}

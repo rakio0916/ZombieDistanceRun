@@ -1,13 +1,14 @@
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getD1 } from "@/db";
 import { parseFinishPayload } from "@/lib/game-api";
-import { runSimulation } from "@/lib/game-core";
+import { runSimulationForRuleset } from "@/lib/game-core";
 
 type RunRow = {
   run_id: string;
   player_id: string;
   challenge_date: string;
   seed: number;
+  ruleset_id: string;
   status: string;
   distance_cm: number | null;
   duration_ticks: number | null;
@@ -38,7 +39,7 @@ export async function POST(
   const database = getD1();
   const row = await database
     .prepare(
-      "SELECT r.run_id, r.player_id, r.challenge_date, r.seed, r.status, r.distance_cm, r.duration_ticks, r.terminal_reason FROM runs r JOIN players p ON p.player_id = r.player_id WHERE r.run_id = ? AND p.auth_subject = ?",
+      "SELECT r.run_id, r.player_id, r.challenge_date, r.seed, r.ruleset_id, r.status, r.distance_cm, r.duration_ticks, r.terminal_reason FROM runs r JOIN players p ON p.player_id = r.player_id WHERE r.run_id = ? AND p.auth_subject = ?",
     )
     .bind(runId, user.userId)
     .first<RunRow>();
@@ -48,7 +49,7 @@ export async function POST(
   }
   if (row.status !== "RUNNING") return json({ error: "RUN_STATE_CONFLICT" }, 409);
 
-  const result = runSimulation(row.seed, payload.final_tick, payload.events);
+  const result = runSimulationForRuleset(row.ruleset_id, row.seed, payload.final_tick, payload.events);
   if (!result || result.terminalReason !== payload.terminal_reason) {
     return json({ error: "RESULT_NOT_REPRODUCIBLE" }, 422);
   }
@@ -57,9 +58,9 @@ export async function POST(
   const inputSha = await sha256(raw);
   const existingBest = await database
     .prepare(
-      "SELECT best_run_id, distance_cm, duration_ticks, achieved_at_ms FROM best_scores WHERE challenge_date = ? AND player_id = ?",
+      "SELECT best_run_id, distance_cm, duration_ticks, achieved_at_ms FROM best_scores WHERE challenge_date = ? AND ruleset_id = ? AND player_id = ?",
     )
-    .bind(row.challenge_date, row.player_id)
+    .bind(row.challenge_date, row.ruleset_id, row.player_id)
     .first<{ best_run_id: string; distance_cm: number; duration_ticks: number; achieved_at_ms: number }>();
   const isBetter =
     !existingBest ||
@@ -77,13 +78,13 @@ export async function POST(
   if (isBetter) {
     statements.push(
       database
-        .prepare("DELETE FROM best_scores WHERE challenge_date = ? AND player_id = ?")
-        .bind(row.challenge_date, row.player_id),
+        .prepare("DELETE FROM best_scores WHERE challenge_date = ? AND ruleset_id = ? AND player_id = ?")
+        .bind(row.challenge_date, row.ruleset_id, row.player_id),
       database
         .prepare(
-          "INSERT INTO best_scores (challenge_date, player_id, best_run_id, distance_cm, duration_ticks, achieved_at_ms) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO best_scores (challenge_date, ruleset_id, player_id, best_run_id, distance_cm, duration_ticks, achieved_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(row.challenge_date, row.player_id, row.run_id, result.distanceCm, result.durationTicks, now),
+        .bind(row.challenge_date, row.ruleset_id, row.player_id, row.run_id, result.distanceCm, result.durationTicks, now),
     );
   }
   await database.batch(statements);
@@ -96,6 +97,7 @@ export async function POST(
       distance_m: Number((result.distanceCm / 100).toFixed(2)),
       duration_ticks: result.durationTicks,
       terminal_reason: result.terminalReason,
+      ruleset_id: row.ruleset_id,
       time_limit_completed: result.terminalReason === "TIME_LIMIT",
     },
     was_personal_best: isBetter,
@@ -110,6 +112,7 @@ function toPublicRun(row: RunRow) {
     distance_m: row.distance_cm === null ? null : Number((row.distance_cm / 100).toFixed(2)),
     duration_ticks: row.duration_ticks,
     terminal_reason: row.terminal_reason,
+    ruleset_id: row.ruleset_id,
     time_limit_completed: row.terminal_reason === "TIME_LIMIT",
   };
 }

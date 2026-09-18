@@ -23,6 +23,9 @@ export const runs = sqliteTable(
     playerId: text("player_id").notNull().references(() => players.playerId, { onDelete: "cascade" }),
     challengeDate: text("challenge_date").notNull(),
     seed: integer("seed").notNull(),
+    rulesetId: text("ruleset_id").notNull(),
+    coreVersion: text("core_version").notNull(),
+    catalogVersion: text("catalog_version").notNull(),
     status: text("status").notNull(),
     issuedAtMs: integer("issued_at_ms").notNull(),
     startedAtMs: integer("started_at_ms").notNull(),
@@ -42,6 +45,7 @@ export const bestScores = sqliteTable(
   "best_scores",
   {
     challengeDate: text("challenge_date").notNull(),
+    rulesetId: text("ruleset_id").notNull(),
     playerId: text("player_id").notNull().references(() => players.playerId, { onDelete: "cascade" }),
     bestRunId: text("best_run_id").notNull().references(() => runs.runId, { onDelete: "cascade" }),
     distanceCm: integer("distance_cm").notNull(),
@@ -49,10 +53,11 @@ export const bestScores = sqliteTable(
     achievedAtMs: integer("achieved_at_ms").notNull(),
   },
   (table) => [
-    uniqueIndex("ux_best_scores_player_day").on(table.challengeDate, table.playerId),
+    uniqueIndex("ux_best_scores_player_day_ruleset").on(table.challengeDate, table.rulesetId, table.playerId),
     uniqueIndex("ux_best_scores_run").on(table.bestRunId),
     index("idx_best_scores_daily_rank").on(
       table.challengeDate,
+      table.rulesetId,
       table.distanceCm,
       table.durationTicks,
       table.achievedAtMs,
