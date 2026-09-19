@@ -2,11 +2,18 @@ export const TICK_RATE = 30;
 export const MAX_TICKS = 54_000;
 export const RULESET_ID = "zdr-gesture-run-v3";
 export const DIFFICULTY_RULESET_IDS = {
+  beginner: "zdr-difficulty-beginner-v5",
+  intermediate: "zdr-difficulty-intermediate-v5",
+  advanced: "zdr-difficulty-advanced-v5",
+} as const;
+export const LEGACY_DIFFICULTY_RULESET_IDS = {
   beginner: "zdr-difficulty-beginner-v4",
   intermediate: "zdr-difficulty-intermediate-v4",
   advanced: "zdr-difficulty-advanced-v4",
 } as const;
-export const DIFFICULTY_CORE_VERSION = "5.0.0";
+export const DIFFICULTY_SPEED_PERCENT = { beginner: 100, intermediate: 150, advanced: 200 } as const;
+export const LEGACY_DIFFICULTY_SPEED_PERCENT = { beginner: 85, intermediate: 100, advanced: 120 } as const;
+export const DIFFICULTY_CORE_VERSION = "6.0.0";
 export const DIFFICULTY_CATALOG_VERSION = "zdr-difficulty-course-v4";
 export const CONTINUOUS_RULESET_ID = "zdr-continuous-run-v2";
 export const FRONT_RULESET_ID = "zdr-front-run-v1";
@@ -147,8 +154,17 @@ export function isDifficulty(value: unknown): value is Difficulty {
 }
 
 export function difficultyForRuleset(rulesetId: string): Difficulty | null {
+  return difficultyConfigForRuleset(rulesetId)?.difficulty ?? null;
+}
+
+export function difficultyConfigForRuleset(rulesetId: string): { difficulty: Difficulty; speedPercent: number } | null {
   for (const difficulty of Object.keys(DIFFICULTY_RULESET_IDS) as Difficulty[]) {
-    if (DIFFICULTY_RULESET_IDS[difficulty] === rulesetId) return difficulty;
+    if (DIFFICULTY_RULESET_IDS[difficulty] === rulesetId) {
+      return { difficulty, speedPercent: DIFFICULTY_SPEED_PERCENT[difficulty] };
+    }
+    if (LEGACY_DIFFICULTY_RULESET_IDS[difficulty] === rulesetId) {
+      return { difficulty, speedPercent: LEGACY_DIFFICULTY_SPEED_PERCENT[difficulty] };
+    }
   }
   return null;
 }
@@ -158,6 +174,7 @@ export function advanceDifficultyGameState(
   seed: number,
   input: DifficultyInput,
   difficulty: Difficulty,
+  speedPercent = DIFFICULTY_SPEED_PERCENT[difficulty],
 ): GameState {
   if (previous.terminalReason) return previous;
   const state = { ...previous, lastContactHazardId: null, sprinting: false, boostUntilTick: 0, boostCooldownUntilTick: 0 };
@@ -171,13 +188,12 @@ export function advanceDifficultyGameState(
     state.jumpUntilTick = state.tick + 24;
   }
 
-  const percent = difficulty === "beginner" ? 85 : difficulty === "advanced" ? 120 : 100;
   const tier = Math.floor(state.distanceMm / 250_000);
   const baseSpeed = 6_500 + Math.min(3_500, tier * 250);
   const hordeBaseSpeed = 5_900 + Math.min(5_100, tier * 300);
-  const intendedSpeed = Math.floor((baseSpeed * percent) / 100);
+  const intendedSpeed = Math.floor((baseSpeed * speedPercent) / 100);
   const playerSpeed = state.stumbleUntilTick > state.tick ? Math.floor(intendedSpeed / 2) : intendedSpeed;
-  const hordeSpeed = Math.floor((hordeBaseSpeed * percent) / 100);
+  const hordeSpeed = Math.floor((hordeBaseSpeed * speedPercent) / 100);
   const previousDistanceMm = state.distanceMm;
   const withRemainder = state.distanceRemainder + playerSpeed;
   state.distanceMm += Math.floor(withRemainder / TICK_RATE);
@@ -284,13 +300,18 @@ export function runContinuousSimulation(seed: number, inputs: readonly Continuou
   return { ...state, durationTicks: state.tick, distanceCm: Math.floor(state.distanceMm / 10), crowdCount: 6 + 3 * Math.floor(state.distanceMm / 250_000) };
 }
 
-export function runDifficultySimulation(seed: number, inputs: readonly DifficultyInput[], difficulty: Difficulty): SimulationResult | null {
+export function runDifficultySimulation(
+  seed: number,
+  inputs: readonly DifficultyInput[],
+  difficulty: Difficulty,
+  speedPercent = DIFFICULTY_SPEED_PERCENT[difficulty],
+): SimulationResult | null {
   if (inputs.length < 1 || inputs.length > MAX_TICKS) return null;
   let state = createGameState();
   for (const input of inputs) {
     if (state.terminalReason) return null;
     if (!Number.isInteger(input.targetXmm) || input.targetXmm < -ROAD_HALF_WIDTH_MM || input.targetXmm > ROAD_HALF_WIDTH_MM) return null;
-    state = advanceDifficultyGameState(state, seed, input, difficulty);
+    state = advanceDifficultyGameState(state, seed, input, difficulty, speedPercent);
   }
   if (!state.terminalReason || state.tick !== inputs.length) return null;
   return { ...state, durationTicks: state.tick, distanceCm: Math.floor(state.distanceMm / 10), crowdCount: 6 + 3 * Math.floor(state.distanceMm / 250_000) };

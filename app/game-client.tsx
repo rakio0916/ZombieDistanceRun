@@ -24,9 +24,9 @@ type Phase = "ready" | "starting" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
 
 const DIFFICULTIES: Record<Difficulty, { label: string; description: string }> = {
-  beginner: { label: "初級", description: "ゆっくり" },
-  intermediate: { label: "中級", description: "ふつう" },
-  advanced: { label: "上級", description: "速い" },
+  beginner: { label: "初級", description: "速度100%" },
+  intermediate: { label: "中級", description: "速度150%" },
+  advanced: { label: "上級", description: "速度200%" },
 };
 const DIFFICULTY_IDS = Object.keys(DIFFICULTIES) as Difficulty[];
 

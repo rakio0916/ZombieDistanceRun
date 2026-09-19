@@ -1,7 +1,7 @@
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getD1 } from "@/db";
 import { decodeContinuousInputs, decodeDifficultyInputs, decodeGestureInputs, parseFinishPayload } from "@/lib/game-api";
-import { CONTINUOUS_RULESET_ID, difficultyForRuleset, RULESET_ID, runContinuousSimulation, runContinuousV2Simulation, runDifficultySimulation, runSimulationForRuleset } from "@/lib/game-core";
+import { CONTINUOUS_RULESET_ID, difficultyConfigForRuleset, RULESET_ID, runContinuousSimulation, runContinuousV2Simulation, runDifficultySimulation, runSimulationForRuleset } from "@/lib/game-core";
 
 type RunRow = {
   run_id: string;
@@ -49,9 +49,9 @@ export async function POST(
   }
   if (row.status !== "RUNNING") return json({ error: "RUN_STATE_CONFLICT" }, 409);
 
-  const difficulty = difficultyForRuleset(row.ruleset_id);
-  const result = payload.schema_version === "4.0.0" && difficulty
-    ? runDifficultySimulation(row.seed, decodeDifficultyInputs(payload.input_b64, payload.final_tick) ?? [], difficulty)
+  const difficultyConfig = difficultyConfigForRuleset(row.ruleset_id);
+  const result = payload.schema_version === "4.0.0" && difficultyConfig
+    ? runDifficultySimulation(row.seed, decodeDifficultyInputs(payload.input_b64, payload.final_tick) ?? [], difficultyConfig.difficulty, difficultyConfig.speedPercent)
     : payload.schema_version === "3.0.0" && row.ruleset_id === RULESET_ID
     ? runContinuousSimulation(row.seed, decodeGestureInputs(payload.input_b64, payload.final_tick) ?? [])
     : payload.schema_version === "2.0.0" && row.ruleset_id === CONTINUOUS_RULESET_ID

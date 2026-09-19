@@ -1,8 +1,9 @@
 import { getD1 } from "@/db";
-import { challengeDateInTokyo, CONTINUOUS_RULESET_ID, DIFFICULTY_RULESET_IDS, FRONT_RULESET_ID, LEGACY_RULESET_ID, RULESET_ID } from "@/lib/game-core";
+import { challengeDateInTokyo, CONTINUOUS_RULESET_ID, DIFFICULTY_RULESET_IDS, FRONT_RULESET_ID, LEGACY_DIFFICULTY_RULESET_IDS, LEGACY_RULESET_ID, RULESET_ID } from "@/lib/game-core";
 
 const allowedRulesets = new Set<string>([
   ...Object.values(DIFFICULTY_RULESET_IDS),
+  ...Object.values(LEGACY_DIFFICULTY_RULESET_IDS),
   RULESET_ID,
   CONTINUOUS_RULESET_ID,
   FRONT_RULESET_ID,

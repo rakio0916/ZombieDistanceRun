@@ -5,6 +5,7 @@ import {
   advanceContinuousGameState,
   advanceDifficultyGameState,
   createGameState,
+  difficultyConfigForRuleset,
   getDifficultyHazardsInRange,
   getHazardsInRange,
   HAZARD_LOOKAHEAD_MM,
@@ -125,12 +126,20 @@ test("difficulty changes only the forward speed", () => {
   const beginner = advanceDifficultyGameState(createGameState(), 42, input, "beginner");
   const intermediate = advanceDifficultyGameState(createGameState(), 42, input, "intermediate");
   const advanced = advanceDifficultyGameState(createGameState(), 42, input, "advanced");
-  assert.equal(beginner.distanceMm, 184);
-  assert.equal(intermediate.distanceMm, 216);
-  assert.equal(advanced.distanceMm, 260);
+  assert.equal(beginner.distanceMm, 216);
+  assert.equal(intermediate.distanceMm, 325);
+  assert.equal(advanced.distanceMm, 433);
   assert.equal(beginner.stamina, 100);
   assert.equal(intermediate.stamina, 100);
   assert.equal(advanced.stamina, 100);
+});
+
+test("version 4 difficulty rulesets keep their original speed percentages", () => {
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v4"), { difficulty: "beginner", speedPercent: 85 });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v4"), { difficulty: "intermediate", speedPercent: 100 });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v4"), { difficulty: "advanced", speedPercent: 120 });
+  const legacyAdvanced = advanceDifficultyGameState(createGameState(), 42, { targetXmm: 0, jump: false }, "advanced", 120);
+  assert.equal(legacyAdvanced.distanceMm, 260);
 });
 
 test("difficulty catalog uses the enlarged low obstacle footprint", () => {
