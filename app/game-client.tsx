@@ -6,7 +6,7 @@ import {
   advanceDifficultyGameState,
   challengeDateInTokyo,
   CONTINUOUS_MOVE_PER_TICK_MM,
-  createGameState,
+  createDifficultyGameState,
   DIFFICULTY_RULESET_IDS,
   isDifficulty,
   ROAD_HALF_WIDTH_MM,
@@ -23,15 +23,15 @@ type OfficialRun = { run_id: string; seed: number; display_name: string; difficu
 type Phase = "ready" | "starting" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
 
-const DIFFICULTIES: Record<Difficulty, { label: string; description: string }> = {
-  beginner: { label: "初級", description: "速度100%" },
-  intermediate: { label: "中級", description: "速度150%" },
-  advanced: { label: "上級", description: "速度200%" },
+const DIFFICULTIES: Record<Difficulty, { label: string }> = {
+  beginner: { label: "初級" },
+  intermediate: { label: "中級" },
+  advanced: { label: "上級" },
 };
 const DIFFICULTY_IDS = Object.keys(DIFFICULTIES) as Difficulty[];
 
 export function GameClient({ signedIn }: { signedIn: boolean }) {
-  const stateRef = useRef<GameState>(createGameState());
+  const stateRef = useRef<GameState>(createDifficultyGameState());
   const inputsRef = useRef<DifficultyInput[]>([]);
   const targetXRef = useRef(0);
   const jumpQueuedRef = useRef(false);
@@ -44,7 +44,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const [phase, setPhase] = useState<Phase>("ready");
   const phaseRef = useRef<Phase>("ready");
-  const [game, setGame] = useState<GameState>(() => createGameState());
+  const [game, setGame] = useState<GameState>(() => createDifficultyGameState());
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [notice, setNotice] = useState("主人公とレベルを選んで開始してください。");
   const [alias, setAlias] = useState<string | null>(null);
@@ -60,6 +60,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const activeRunCharacter = CHARACTERS[runCharacterId];
   const isActive = phase === "starting" || phase === "running" || phase === "saving";
   const showSetup = setupOpen && (phase === "ready" || phase === "ended");
+  const isResult = phase === "ended" && !setupOpen;
 
   const onCharacterStatus = useCallback((characterId: CharacterId, status: CharacterStatus) => {
     setCharacterStatus((current) => characterId === selectedCharacterId ? status : current);
@@ -110,7 +111,8 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     const difficulty = runDifficultyRef.current;
     const official = officialRunRef.current;
     if (!official) {
-      setNotice(`${DIFFICULTIES[difficulty].label}の練習結果 ${formatMeters(final.distanceMm)}m。`);
+      const result = final.terminalReason === "TIME_LIMIT" ? "30:00完走" : "スタミナ切れ";
+      setNotice(`${DIFFICULTIES[difficulty].label}の練習結果 ${formatMeters(final.distanceMm)}m（${result}）。`);
       phaseRef.current = "ended";
       setPhase("ended");
       window.setTimeout(() => resultHeadingRef.current?.focus({ preventScroll: true }), 0);
@@ -207,7 +209,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
       setNotice(`${DIFFICULTIES[difficulty].label}の練習を開始しました。`);
     }
 
-    const initial = createGameState();
+    const initial = createDifficultyGameState();
     setSeed(runSeed);
     stateRef.current = initial;
     inputsRef.current = [];
@@ -267,13 +269,12 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   }, [queueJump]);
 
   const crowdCount = 6 + 3 * Math.floor(game.distanceMm / 250_000);
-  const gapPercent = Math.max(0, Math.min(100, (game.hordeGapMm / 12_000) * 100));
   const displayDifficulty = isActive || phase === "ended" ? runDifficulty : selectedDifficulty;
   const displayCharacter = isActive || phase === "ended" ? activeRunCharacter : selectedCharacter;
 
   return (
     <main className={`zdr-shell ${isActive ? "is-active" : ""}`}>
-      <section className={`zdr-game ${isActive ? "is-active" : ""}`} aria-label="ゾンビ逃走ゲーム">
+      <section className={`zdr-game ${isActive ? "is-active" : ""} ${isResult ? "is-result" : ""}`} aria-label="ゾンビ逃走ゲーム">
         {showSetup && (
           <section className="zdr-setup" aria-labelledby="setup-title">
             <h2 id="setup-title" ref={setupHeadingRef} tabIndex={-1}>走る設定を選ぶ</h2>
@@ -283,7 +284,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
                 {CHARACTER_IDS.map((characterId) => {
                   const character = CHARACTERS[characterId];
                   const selected = character.id === selectedCharacterId;
-                  return <button key={character.id} type="button" className={selected ? "is-selected" : ""} aria-pressed={selected} disabled={!character.available} onClick={() => selectCharacter(character.id)}><b>{character.label}</b><span>{character.description}</span></button>;
+                  return <button key={character.id} type="button" className={selected ? "is-selected" : ""} aria-pressed={selected} disabled={!character.available} onClick={() => selectCharacter(character.id)}><b>{character.label}</b></button>;
                 })}
               </div>
             </div>
@@ -292,7 +293,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
               <div className="zdr-choice-grid zdr-choice-grid--levels" role="group" aria-label="レベルを選ぶ">
                 {DIFFICULTY_IDS.map((difficulty) => (
                   <button key={difficulty} type="button" className={difficulty === selectedDifficulty ? "is-selected" : ""} aria-pressed={difficulty === selectedDifficulty} onClick={() => setSelectedDifficulty(difficulty)}>
-                    <b>{DIFFICULTIES[difficulty].label}</b><span>{DIFFICULTIES[difficulty].description}</span>
+                    <b>{DIFFICULTIES[difficulty].label}</b>
                   </button>
                 ))}
               </div>
@@ -309,22 +310,20 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <div className="zdr-run-label"><span>{displayCharacter.label}</span><strong>{DIFFICULTIES[displayDifficulty].label}</strong></div>
             <div><span>距離</span><strong>{formatMeters(game.distanceMm)}m</strong></div>
             <div className="zdr-stamina"><span>スタミナ {game.stamina}</span><i><b style={{ width: `${game.stamina}%` }} /></i></div>
-            <div className="zdr-gap"><span>安全距離 {formatMeters(game.hordeGapMm)}m</span><i><b style={{ width: `${gapPercent}%` }} /></i></div>
             <div className="zdr-crowd"><span>群れ</span><strong>{crowdCount}体</strong></div>
           </div>
           <GameScene game={game} seed={seed} phase={phase} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onTargetX={setTargetX} onJump={queueJump} />
           {characterStatus !== "ready" && <div className="zdr-load-state" role="status">{characterStatus === "loading" ? `${selectedCharacter.label}の人物3Dと街を読み込み中…` : `${selectedCharacter.label}の人物3Dを読み込めませんでした。別の人物を選ぶか、再読み込みしてください。`}</div>}
-          {game.terminalReason && <div className="zdr-caught" aria-hidden="true">{game.terminalReason === "EXHAUSTED" ? "EXHAUSTED" : "CAUGHT"}</div>}
+          {game.terminalReason && <div className="zdr-caught" aria-hidden="true">{game.terminalReason === "TIME_LIMIT" ? "30:00 完走" : "スタミナ切れ"}</div>}
           {phase === "starting" && <div className="zdr-phase-overlay" role="status">{DIFFICULTIES[runDifficulty].label}で開始しています…</div>}
         </div>
 
-        <div className="zdr-game-status" aria-live="polite">
+        {phase !== "ended" && <div className="zdr-game-status" aria-live="polite">
           {phase === "ready" && "主人公とレベルを選んで開始してください。"}
           {phase === "starting" && "走行を開始しています…"}
           {phase === "running" && (alias ? `${alias}として${DIFFICULTIES[runDifficulty].label}ランク戦中` : `${DIFFICULTIES[runDifficulty].label}の練習中`)}
           {phase === "saving" && "結果を表示しています。記録を確認中です…"}
-          {phase === "ended" && "走行終了"}
-        </div>
+        </div>}
 
         {phase === "ended" && !setupOpen && (
           <section className="zdr-result-actions" aria-labelledby="result-title">
@@ -347,7 +346,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <div><dt>PC</dt><dd>A / D、← / →で移動、Spaceでジャンプ</dd></div>
             <div><dt>スマホ</dt><dd>指ドラッグで左右移動、画面タップでジャンプ</dd></div>
             <div><dt>人物3D</dt><dd>{characterStatus === "ready" ? selectedCharacter.releaseLabel : characterStatus === "loading" ? `${selectedCharacter.label}を読み込み中` : `${selectedCharacter.label}の読み込みエラー`}</dd></div>
-            <div><dt>レベル</dt><dd>{DIFFICULTIES[selectedDifficulty].label}／{DIFFICULTIES[selectedDifficulty].description}</dd></div>
+            <div><dt>レベル</dt><dd>{DIFFICULTIES[selectedDifficulty].label}</dd></div>
           </dl>
           <div className="zdr-board">
             <div className="zdr-board-title"><h2>今日の{DIFFICULTIES[selectedDifficulty].label}ランキング</h2><button type="button" onClick={() => void loadLeaderboard(selectedDifficulty)}>更新</button></div>

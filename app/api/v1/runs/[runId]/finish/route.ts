@@ -50,8 +50,11 @@ export async function POST(
   if (row.status !== "RUNNING") return json({ error: "RUN_STATE_CONFLICT" }, 409);
 
   const difficultyConfig = difficultyConfigForRuleset(row.ruleset_id);
+  if (payload.schema_version === "4.0.0" && difficultyConfig?.generation === "current" && payload.terminal_reason === "CAUGHT") {
+    return json({ error: "RESULT_NOT_REPRODUCIBLE" }, 422);
+  }
   const result = payload.schema_version === "4.0.0" && difficultyConfig
-    ? runDifficultySimulation(row.seed, decodeDifficultyInputs(payload.input_b64, payload.final_tick) ?? [], difficultyConfig.difficulty, difficultyConfig.speedPercent)
+    ? runDifficultySimulation(row.seed, decodeDifficultyInputs(payload.input_b64, payload.final_tick) ?? [], difficultyConfig.difficulty, difficultyConfig.speedPercent, difficultyConfig.generation)
     : payload.schema_version === "3.0.0" && row.ruleset_id === RULESET_ID
     ? runContinuousSimulation(row.seed, decodeGestureInputs(payload.input_b64, payload.final_tick) ?? [])
     : payload.schema_version === "2.0.0" && row.ruleset_id === CONTINUOUS_RULESET_ID

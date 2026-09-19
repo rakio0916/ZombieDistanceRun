@@ -2,6 +2,11 @@ export const TICK_RATE = 30;
 export const MAX_TICKS = 54_000;
 export const RULESET_ID = "zdr-gesture-run-v3";
 export const DIFFICULTY_RULESET_IDS = {
+  beginner: "zdr-difficulty-beginner-v6",
+  intermediate: "zdr-difficulty-intermediate-v6",
+  advanced: "zdr-difficulty-advanced-v6",
+} as const;
+export const PREVIOUS_DIFFICULTY_RULESET_IDS = {
   beginner: "zdr-difficulty-beginner-v5",
   intermediate: "zdr-difficulty-intermediate-v5",
   advanced: "zdr-difficulty-advanced-v5",
@@ -11,10 +16,11 @@ export const LEGACY_DIFFICULTY_RULESET_IDS = {
   intermediate: "zdr-difficulty-intermediate-v4",
   advanced: "zdr-difficulty-advanced-v4",
 } as const;
-export const DIFFICULTY_SPEED_PERCENT = { beginner: 100, intermediate: 150, advanced: 200 } as const;
+export const DIFFICULTY_SPEED_PERCENT = { beginner: 100, intermediate: 200, advanced: 500 } as const;
+export const PREVIOUS_DIFFICULTY_SPEED_PERCENT = { beginner: 100, intermediate: 150, advanced: 200 } as const;
 export const LEGACY_DIFFICULTY_SPEED_PERCENT = { beginner: 85, intermediate: 100, advanced: 120 } as const;
-export const DIFFICULTY_CORE_VERSION = "6.0.0";
-export const DIFFICULTY_CATALOG_VERSION = "zdr-difficulty-course-v4";
+export const DIFFICULTY_CORE_VERSION = "7.0.0";
+export const DIFFICULTY_CATALOG_VERSION = "zdr-difficulty-course-v5";
 export const CONTINUOUS_RULESET_ID = "zdr-continuous-run-v2";
 export const FRONT_RULESET_ID = "zdr-front-run-v1";
 export const LEGACY_RULESET_ID = "zdr-canvas-legacy-2026-09-17";
@@ -37,6 +43,7 @@ export type Action = "LANE_LEFT" | "LANE_RIGHT" | "JUMP" | "SPRINT_ON" | "SPRINT
 export type TerminalReason = "CAUGHT" | "EXHAUSTED" | "TIME_LIMIT";
 export type HazardKind = "ZOMBIE" | "SOLID" | "LOW";
 export type Difficulty = keyof typeof DIFFICULTY_RULESET_IDS;
+export type DifficultyRulesGeneration = "current" | "v5" | "v4";
 
 export type GameEvent = { seq: number; tick: number; action: Action };
 /** v3 input: jump and boost are one-tick edges, never held states. */
@@ -106,6 +113,13 @@ export function createGameState(): GameState {
   };
 }
 
+/** New difficulty runs have no safety-distance state. */
+export function createDifficultyGameState(): GameState {
+  const state = createGameState();
+  delete (state as Partial<GameState>).hordeGapMm;
+  return state;
+}
+
 export function advanceContinuousGameState(previous: GameState, seed: number, input: ContinuousInput): GameState {
   if (previous.terminalReason) return previous;
   const state = { ...previous, lastContactHazardId: null };
@@ -157,13 +171,16 @@ export function difficultyForRuleset(rulesetId: string): Difficulty | null {
   return difficultyConfigForRuleset(rulesetId)?.difficulty ?? null;
 }
 
-export function difficultyConfigForRuleset(rulesetId: string): { difficulty: Difficulty; speedPercent: number } | null {
+export function difficultyConfigForRuleset(rulesetId: string): { difficulty: Difficulty; speedPercent: number; generation: DifficultyRulesGeneration } | null {
   for (const difficulty of Object.keys(DIFFICULTY_RULESET_IDS) as Difficulty[]) {
     if (DIFFICULTY_RULESET_IDS[difficulty] === rulesetId) {
-      return { difficulty, speedPercent: DIFFICULTY_SPEED_PERCENT[difficulty] };
+      return { difficulty, speedPercent: DIFFICULTY_SPEED_PERCENT[difficulty], generation: "current" };
+    }
+    if (PREVIOUS_DIFFICULTY_RULESET_IDS[difficulty] === rulesetId) {
+      return { difficulty, speedPercent: PREVIOUS_DIFFICULTY_SPEED_PERCENT[difficulty], generation: "v5" };
     }
     if (LEGACY_DIFFICULTY_RULESET_IDS[difficulty] === rulesetId) {
-      return { difficulty, speedPercent: LEGACY_DIFFICULTY_SPEED_PERCENT[difficulty] };
+      return { difficulty, speedPercent: LEGACY_DIFFICULTY_SPEED_PERCENT[difficulty], generation: "v4" };
     }
   }
   return null;
@@ -175,9 +192,11 @@ export function advanceDifficultyGameState(
   input: DifficultyInput,
   difficulty: Difficulty,
   speedPercent = DIFFICULTY_SPEED_PERCENT[difficulty],
+  generation: DifficultyRulesGeneration = "current",
 ): GameState {
   if (previous.terminalReason) return previous;
   const state = { ...previous, lastContactHazardId: null, sprinting: false, boostUntilTick: 0, boostCooldownUntilTick: 0 };
+  if (generation === "current") delete (state as Partial<GameState>).hordeGapMm;
   const previousXmm = state.xMm;
   state.targetXmm = clampInteger(input.targetXmm, -ROAD_HALF_WIDTH_MM, ROAD_HALF_WIDTH_MM);
   state.xMm += clampInteger(state.targetXmm - state.xMm, -CONTINUOUS_MOVE_PER_TICK_MM, CONTINUOUS_MOVE_PER_TICK_MM);
@@ -198,13 +217,15 @@ export function advanceDifficultyGameState(
   const withRemainder = state.distanceRemainder + playerSpeed;
   state.distanceMm += Math.floor(withRemainder / TICK_RATE);
   state.distanceRemainder = withRemainder % TICK_RATE;
-  state.hordeGapMm = Math.min(INITIAL_HORDE_GAP_MM, state.hordeGapMm + Math.trunc((playerSpeed - hordeSpeed) / TICK_RATE));
-  applyDifficultyHazardContact(state, seed, previousXmm, previousDistanceMm);
+  if (generation !== "current") {
+    state.hordeGapMm = Math.min(INITIAL_HORDE_GAP_MM, (state.hordeGapMm ?? INITIAL_HORDE_GAP_MM) + Math.trunc((playerSpeed - hordeSpeed) / TICK_RATE));
+  }
+  applyDifficultyHazardContact(state, seed, previousXmm, previousDistanceMm, generation);
   state.tick += 1;
   if (state.stamina <= 0) {
     state.stamina = 0;
     state.terminalReason = "EXHAUSTED";
-  } else if (state.hordeGapMm <= 0) {
+  } else if (generation !== "current" && (state.hordeGapMm ?? 0) <= 0) {
     state.hordeGapMm = 0;
     state.terminalReason = "CAUGHT";
   } else if (state.tick >= MAX_TICKS) state.terminalReason = "TIME_LIMIT";
@@ -257,12 +278,20 @@ export function getHazardsInRange(seed: number, startMm: number, endMm: number):
 }
 
 export function getDifficultyHazardsInRange(seed: number, startMm: number, endMm: number): GeneratedHazard[] {
+  return getDifficultyHazardsForGeneration(seed, startMm, endMm, "current");
+}
+
+export function getPreviousDifficultyHazardsInRange(seed: number, startMm: number, endMm: number): GeneratedHazard[] {
+  return getDifficultyHazardsForGeneration(seed, startMm, endMm, "v5");
+}
+
+function getDifficultyHazardsForGeneration(seed: number, startMm: number, endMm: number, generation: DifficultyRulesGeneration): GeneratedHazard[] {
   if (endMm < SAFE_START_MM || endMm < startMm) return [];
   const firstIndex = Math.max(0, Math.floor((startMm - FIRST_ENCOUNTER_MM - 2_500) / ENCOUNTER_SPACING_MM));
   const lastIndex = Math.max(firstIndex, Math.ceil((endMm - FIRST_ENCOUNTER_MM + 2_500) / ENCOUNTER_SPACING_MM));
   const hazards: GeneratedHazard[] = [];
   for (let encounterIndex = firstIndex; encounterIndex <= lastIndex; encounterIndex += 1) {
-    for (const hazard of hazardsForEncounter(seed, encounterIndex, 400)) {
+    for (const hazard of hazardsForEncounter(seed, encounterIndex, 400, generation === "current")) {
       const hazardStart = hazard.centerMm - hazard.halfLengthMm;
       const hazardEnd = hazard.centerMm + hazard.halfLengthMm;
       if (hazardEnd >= startMm && hazardStart <= endMm) hazards.push(hazard);
@@ -305,13 +334,14 @@ export function runDifficultySimulation(
   inputs: readonly DifficultyInput[],
   difficulty: Difficulty,
   speedPercent = DIFFICULTY_SPEED_PERCENT[difficulty],
+  generation: DifficultyRulesGeneration = "current",
 ): SimulationResult | null {
   if (inputs.length < 1 || inputs.length > MAX_TICKS) return null;
-  let state = createGameState();
+  let state = generation === "current" ? createDifficultyGameState() : createGameState();
   for (const input of inputs) {
     if (state.terminalReason) return null;
     if (!Number.isInteger(input.targetXmm) || input.targetXmm < -ROAD_HALF_WIDTH_MM || input.targetXmm > ROAD_HALF_WIDTH_MM) return null;
-    state = advanceDifficultyGameState(state, seed, input, difficulty, speedPercent);
+    state = advanceDifficultyGameState(state, seed, input, difficulty, speedPercent, generation);
   }
   if (!state.terminalReason || state.tick !== inputs.length) return null;
   return { ...state, durationTicks: state.tick, distanceCm: Math.floor(state.distanceMm / 10), crowdCount: 6 + 3 * Math.floor(state.distanceMm / 250_000) };
@@ -386,7 +416,7 @@ function runValidatedSimulation(
   };
 }
 
-function hazardsForEncounter(seed: number, encounterIndex: number, lowHalfLengthMm: number): GeneratedHazard[] {
+function hazardsForEncounter(seed: number, encounterIndex: number, lowHalfLengthMm: number, jumpableOnly = false): GeneratedHazard[] {
   const centerMm = FIRST_ENCOUNTER_MM + encounterIndex * ENCOUNTER_SPACING_MM;
   const random = hash32(seed ^ Math.imul(encounterIndex + 1, 0x9e3779b1));
   const safeLane = (random % 3) as 0 | 1 | 2;
@@ -394,7 +424,8 @@ function hazardsForEncounter(seed: number, encounterIndex: number, lowHalfLength
   const variant = (random >>> 8) % 4;
   const count = variant === 0 ? 1 : 2;
   return blocked.slice(0, count).map((lane, index) => {
-    const kind: HazardKind = variant === 2 && index === 1 ? "LOW" : variant === 3 && index === 0 ? "SOLID" : "ZOMBIE";
+    const legacyKind: HazardKind = variant === 2 && index === 1 ? "LOW" : variant === 3 && index === 0 ? "SOLID" : "ZOMBIE";
+    const kind: HazardKind = jumpableOnly && legacyKind === "SOLID" ? "LOW" : legacyKind;
     return {
       id: `enc-${encounterIndex}-${lane}-${kind.toLowerCase()}`,
       kind,
@@ -491,10 +522,14 @@ function applyDifficultyHazardContact(
   seed: number,
   previousXmm: number,
   previousDistanceMm: number,
+  generation: DifficultyRulesGeneration,
 ): void {
   const start = previousDistanceMm - PLAYER_HALF_LENGTH_MM - 1_600;
   const end = state.distanceMm + PLAYER_HALF_LENGTH_MM + 1_600;
-  const contacted = getDifficultyHazardsInRange(seed, start, end).find((hazard) => {
+  const hazards = generation === "current"
+    ? getDifficultyHazardsInRange(seed, start, end)
+    : getPreviousDifficultyHazardsInRange(seed, start, end);
+  const contacted = hazards.find((hazard) => {
     const hazardXmm = (hazard.lane - 1) * 2_400;
     const hazardHalfWidthMm = hazard.kind === "SOLID" ? 900 : hazard.kind === "LOW" ? 910 : 470;
     const overlapsForward =
@@ -508,7 +543,7 @@ function applyDifficultyHazardContact(
   });
   if (!contacted || state.contactImmunityUntilTick > state.tick) return;
   state.stamina = Math.max(0, state.stamina - 25);
-  state.hordeGapMm = Math.max(0, state.hordeGapMm - 4_000);
+  if (generation !== "current") state.hordeGapMm = Math.max(0, (state.hordeGapMm ?? INITIAL_HORDE_GAP_MM) - 4_000);
   state.stumbleUntilTick = state.tick + 24;
   state.contactImmunityUntilTick = state.tick + 45;
   state.lastContactHazardId = contacted.id;

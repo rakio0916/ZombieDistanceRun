@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { AnimationAction, Group, Mesh, Object3D } from "three";
 import { getDifficultyHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
 import type { CharacterDefinition, CharacterId } from "./characters";
+import { animateZombie, makeZombie, setZombieOpacity } from "./zombie-model";
 
 type Phase = "ready" | "starting" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
@@ -32,6 +33,21 @@ export function GameScene({
   const seedRef = useRef(seed);
   const phaseRef = useRef(phase);
   const gestureRef = useRef<{ pointerId: number; startX: number; startY: number; originXmm: number; startedAt: number; moved: boolean } | null>(null);
+
+  useEffect(() => {
+    const clearGesture = () => { gestureRef.current = null; };
+    const onVisibilityChange = () => { if (document.visibilityState !== "visible") clearGesture(); };
+    window.addEventListener("blur", clearGesture);
+    window.addEventListener("resize", clearGesture);
+    window.addEventListener("orientationchange", clearGesture);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", clearGesture);
+      window.removeEventListener("resize", clearGesture);
+      window.removeEventListener("orientationchange", clearGesture);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     gameRef.current = game;
@@ -91,6 +107,7 @@ export function GameScene({
       const actions = new Map<string, AnimationAction>();
       let activeAction: AnimationAction | null = null;
       let activeClip = "";
+      let playerEnvelope: import("three").Box3 | null = null;
 
       onCharacterStatus(character.id, "loading");
       new GLTFLoader().load(
@@ -115,6 +132,14 @@ export function GameScene({
             }
           });
           playerRoot.add(model);
+          model.updateMatrixWorld(true);
+          playerEnvelope = new THREE.Box3().setFromObject(model);
+          playerEnvelope.min.x -= 0.2;
+          playerEnvelope.max.x += 0.2;
+          playerEnvelope.min.y = Math.min(0, playerEnvelope.min.y - 0.06);
+          playerEnvelope.max.y += 0.16;
+          playerEnvelope.min.z -= 0.12;
+          playerEnvelope.max.z += 0.12;
           mixer = new THREE.AnimationMixer(model);
           for (const clip of gltf.animations) {
             if (!REQUIRED_CLIPS.includes(clip.name as (typeof REQUIRED_CLIPS)[number])) continue;
@@ -141,8 +166,8 @@ export function GameScene({
       rearLeft.rotation.y = Math.PI;
       rearRight.rotation.y = Math.PI;
       scene.add(rearLeft, rearRight);
-      setGroupOpacity(rearLeft, 0);
-      setGroupOpacity(rearRight, 0);
+      setZombieOpacity(rearLeft, 0);
+      setZombieOpacity(rearRight, 0);
 
       const clock = new THREE.Clock();
       let animationFrame = 0;
@@ -181,7 +206,7 @@ export function GameScene({
         const elapsed = clock.elapsedTime;
         const jumping = current.jumpStartTick >= 0 && current.tick - current.jumpStartTick <= 24;
         const stumbling = current.stumbleUntilTick > current.tick;
-        const desiredClip = current.terminalReason === "CAUGHT"
+        const desiredClip = current.terminalReason
           ? "Web_Caught"
           : stumbling
             ? "Web_Stumble"
@@ -195,6 +220,7 @@ export function GameScene({
         if (desiredClip === "Web_Jump" && activeAction) {
           const phase = Math.max(0, Math.min(24, current.tick - current.jumpStartTick));
           activeAction.time = (phase / 24) * activeAction.getClip().duration;
+          mixer?.update(0);
         }
 
         const laneX = current.xMm / 1_000;
@@ -205,11 +231,21 @@ export function GameScene({
           : 0;
         playerRoot.rotation.z += ((stumbling ? -0.22 : (laneX - playerRoot.position.x) * -0.08) - playerRoot.rotation.z) * 0.2;
 
-        camera.position.x += (playerRoot.position.x * 0.12 - camera.position.x) * 0.06;
-        camera.lookAt(playerRoot.position.x * 0.08, 1.05, -10);
+        const portrait = camera.aspect < 0.85;
+        const followRatio = portrait ? 0.56 : 0.34;
+        const followAlpha = 1 - Math.exp(-delta / 0.16);
+        camera.position.x += (playerRoot.position.x * followRatio - camera.position.x) * followAlpha;
+        camera.position.y += ((portrait ? 2.78 : 2.58) - camera.position.y) * followAlpha;
+        camera.position.z += ((portrait ? 6.15 : 4.7) - camera.position.z) * followAlpha;
+        let cameraLookX = playerRoot.position.x * (portrait ? 0.2 : 0.1);
+        camera.lookAt(cameraLookX, 1.12, -10);
+        camera.updateMatrixWorld(true);
+        if (playerEnvelope) {
+          cameraLookX = keepPlayerEnvelopeOnScreen(THREE, camera, playerEnvelope, playerRoot, width, cameraLookX);
+        }
         world.position.z = (current.distanceMm / 1_000) % 40;
         syncHazards(THREE, scene, hazardMeshes, seedRef.current, current.distanceMm, elapsed);
-        syncRearHorde(rearLeft, rearRight, current.hordeGapMm, elapsed);
+        syncRearHorde(rearLeft, rearRight, current.stamina, elapsed);
 
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(draw);
@@ -261,6 +297,45 @@ export function GameScene({
       onLostPointerCapture={() => { if (gestureRef.current) gestureRef.current = null; }}
     />
   );
+}
+
+function keepPlayerEnvelopeOnScreen(
+  THREE: typeof import("three"),
+  camera: import("three").PerspectiveCamera,
+  envelope: import("three").Box3,
+  playerRoot: Group,
+  canvasWidth: number,
+  initialLookX: number,
+): number {
+  const marginNdc = Math.min(0.22, 32 / Math.max(1, canvasWidth));
+  const limit = 1 - marginNdc;
+  let lookX = initialLookX;
+  playerRoot.updateMatrixWorld(true);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    camera.lookAt(lookX, 1.12, -10);
+    camera.updateMatrixWorld(true);
+    let minimum = Number.POSITIVE_INFINITY;
+    let maximum = Number.NEGATIVE_INFINITY;
+    for (const x of [envelope.min.x, envelope.max.x]) {
+      for (const y of [envelope.min.y, envelope.max.y]) {
+        for (const z of [envelope.min.z, envelope.max.z]) {
+          const projected = new THREE.Vector3(x, y, z).applyMatrix4(playerRoot.matrixWorld).project(camera);
+          minimum = Math.min(minimum, projected.x);
+          maximum = Math.max(maximum, projected.x);
+        }
+      }
+    }
+    const overflow = maximum > limit ? maximum - limit : minimum < -limit ? minimum + limit : 0;
+    if (Math.abs(overflow) < 0.0001) break;
+    const depth = Math.max(1, Math.abs(camera.position.z - playerRoot.position.z));
+    const halfWidth = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * depth * camera.aspect;
+    const correction = overflow * halfWidth;
+    camera.position.x += correction;
+    lookX += correction;
+  }
+  camera.lookAt(lookX, 1.12, -10);
+  camera.updateMatrixWorld(true);
+  return lookX;
 }
 
 function addRuinedCity(THREE: typeof import("three"), world: Group) {
@@ -395,45 +470,6 @@ function addStreetLamp(THREE: typeof import("three"), parent: Group, x: number, 
   parent.add(group);
 }
 
-function makeZombie(THREE: typeof import("three"), variant: number, transparent: boolean): Group {
-  const group = new THREE.Group();
-  group.userData.phase = variant * 1.7;
-  const skin = new THREE.MeshStandardMaterial({ color: variant % 2 ? 0x7f8571 : 0x737f78, roughness: 0.96, transparent });
-  const clothes = new THREE.MeshStandardMaterial({ color: variant % 2 ? 0x4a3c3c : 0x384551, roughness: 1, transparent });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x25282c, roughness: 0.96, transparent });
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.62, 4, 10), clothes);
-  torso.position.y = 1.12;
-  torso.rotation.z = variant % 2 ? 0.08 : -0.06;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.255, 14, 10), skin);
-  head.scale.set(0.9, 1.06, 0.9);
-  head.position.set(variant % 2 ? 0.05 : -0.04, 1.82, 0);
-  head.rotation.z = variant % 2 ? 0.2 : -0.18;
-  const leftArm = makeLimb(THREE, skin, 0.13, 0.88);
-  const rightArm = makeLimb(THREE, skin, 0.13, 0.88);
-  leftArm.position.set(-0.43, 1.3, -0.24);
-  rightArm.position.set(0.43, 1.3, -0.24);
-  leftArm.rotation.x = 1.02;
-  rightArm.rotation.x = 0.84;
-  leftArm.rotation.z = -0.28;
-  rightArm.rotation.z = 0.24;
-  const leftLeg = makeLimb(THREE, dark, 0.16, 0.92);
-  const rightLeg = makeLimb(THREE, dark, 0.16, 0.92);
-  leftLeg.position.set(-0.19, 0.46, 0);
-  rightLeg.position.set(0.19, 0.46, 0.05);
-  leftLeg.rotation.z = 0.04;
-  rightLeg.rotation.z = -0.08;
-  group.add(torso, head, leftArm, rightArm, leftLeg, rightLeg);
-  group.userData.leftArm = leftArm;
-  group.userData.rightArm = rightArm;
-  group.userData.head = head;
-  group.traverse((child) => { if ("isMesh" in child && child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
-  return group;
-}
-
-function makeLimb(THREE: typeof import("three"), material: import("three").Material, radius: number, length: number) {
-  return new THREE.Mesh(new THREE.CapsuleGeometry(radius, length - radius * 2, 4, 8), material);
-}
-
 function makeHazard(THREE: typeof import("three"), hazard: GeneratedHazard): Group {
   if (hazard.kind === "ZOMBIE") return makeZombie(THREE, hazard.lane + hazard.centerMm / 72_000, false);
   const group = new THREE.Group();
@@ -442,10 +478,10 @@ function makeHazard(THREE: typeof import("three"), hazard: GeneratedHazard): Gro
   } else {
     const concrete = new THREE.MeshStandardMaterial({ color: 0x9c978d, roughness: 0.98 });
     const stripe = new THREE.MeshStandardMaterial({ color: 0xb85842, roughness: 0.92 });
-    const barrier = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.52, 0.8), concrete);
-    barrier.position.y = 0.28;
-    const marker = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.12, 0.8), stripe);
-    marker.position.set(0, 0.33, 0);
+    const barrier = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.42, 0.8), concrete);
+    barrier.position.y = 0.21;
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.08, 0.8), stripe);
+    marker.position.set(0, 0.34, 0);
     group.add(barrier, marker);
   }
   group.traverse((child) => { if ("isMesh" in child && child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
@@ -481,43 +517,17 @@ function syncHazards(
   }
 }
 
-function animateZombie(group: Group, elapsed: number) {
-  const phase = Number(group.userData.phase ?? 0);
-  const leftArm = group.userData.leftArm as Object3D | undefined;
-  const rightArm = group.userData.rightArm as Object3D | undefined;
-  const head = group.userData.head as Object3D | undefined;
-  const sway = Math.sin(elapsed * 2.1 + phase);
-  group.rotation.z = sway * 0.035;
-  if (leftArm) leftArm.rotation.x = 0.92 + sway * 0.16;
-  if (rightArm) rightArm.rotation.x = 0.86 - sway * 0.14;
-  if (head) head.rotation.y = sway * 0.14;
-}
-
-function syncRearHorde(left: Group, right: Group, gapMm: number, elapsed: number) {
-  const proximity = Math.max(0, Math.min(1, (6_000 - gapMm) / 6_000));
+function syncRearHorde(left: Group, right: Group, stamina: number, elapsed: number) {
+  const proximity = Math.max(0, Math.min(1, (100 - stamina) / 100));
   const opacity = proximity < 0.04 ? 0 : Math.min(0.86, proximity * 1.1);
-  setGroupOpacity(left, opacity);
-  setGroupOpacity(right, opacity);
+  setZombieOpacity(left, opacity);
+  setZombieOpacity(right, opacity);
   left.position.z = 2.6 - proximity * 0.8;
   right.position.z = 2.65 - proximity * 0.82;
   left.position.y = -0.36 + proximity * 0.28;
   right.position.y = -0.36 + proximity * 0.28;
   animateZombie(left, elapsed);
   animateZombie(right, elapsed + 0.8);
-}
-
-function setGroupOpacity(group: Group, opacity: number) {
-  group.visible = opacity > 0.001;
-  group.traverse((child) => {
-    if (!("isMesh" in child) || !child.isMesh) return;
-    const mesh = child as Mesh;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const material of materials) {
-      material.transparent = true;
-      material.opacity = opacity;
-      material.depthWrite = opacity >= 0.98;
-    }
-  });
 }
 
 function normalizeModel(THREE: typeof import("three"), model: Object3D) {

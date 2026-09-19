@@ -4,10 +4,12 @@ import {
   advanceGameState,
   advanceContinuousGameState,
   advanceDifficultyGameState,
+  createDifficultyGameState,
   createGameState,
   difficultyConfigForRuleset,
   getDifficultyHazardsInRange,
   getHazardsInRange,
+  getPreviousDifficultyHazardsInRange,
   HAZARD_LOOKAHEAD_MM,
   SAFE_START_MM,
   type GameEvent,
@@ -127,17 +129,23 @@ test("difficulty changes only the forward speed", () => {
   const intermediate = advanceDifficultyGameState(createGameState(), 42, input, "intermediate");
   const advanced = advanceDifficultyGameState(createGameState(), 42, input, "advanced");
   assert.equal(beginner.distanceMm, 216);
-  assert.equal(intermediate.distanceMm, 325);
-  assert.equal(advanced.distanceMm, 433);
+  assert.equal(intermediate.distanceMm, 433);
+  assert.equal(advanced.distanceMm, 1083);
   assert.equal(beginner.stamina, 100);
   assert.equal(intermediate.stamina, 100);
   assert.equal(advanced.stamina, 100);
 });
 
-test("version 4 difficulty rulesets keep their original speed percentages", () => {
-  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v4"), { difficulty: "beginner", speedPercent: 85 });
-  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v4"), { difficulty: "intermediate", speedPercent: 100 });
-  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v4"), { difficulty: "advanced", speedPercent: 120 });
+test("older difficulty rulesets keep their original speed percentages", () => {
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v6"), { difficulty: "beginner", speedPercent: 100, generation: "current" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v6"), { difficulty: "intermediate", speedPercent: 200, generation: "current" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v6"), { difficulty: "advanced", speedPercent: 500, generation: "current" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v5"), { difficulty: "beginner", speedPercent: 100, generation: "v5" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v5"), { difficulty: "intermediate", speedPercent: 150, generation: "v5" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v5"), { difficulty: "advanced", speedPercent: 200, generation: "v5" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v4"), { difficulty: "beginner", speedPercent: 85, generation: "v4" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v4"), { difficulty: "intermediate", speedPercent: 100, generation: "v4" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v4"), { difficulty: "advanced", speedPercent: 120, generation: "v4" });
   const legacyAdvanced = advanceDifficultyGameState(createGameState(), 42, { targetXmm: 0, jump: false }, "advanced", 120);
   assert.equal(legacyAdvanced.distanceMm, 260);
 });
@@ -150,6 +158,47 @@ test("difficulty catalog uses the enlarged low obstacle footprint", () => {
     .find((item) => item.id === found.hazard.id);
   assert.equal(legacy?.halfLengthMm, 550);
   assert.equal(difficulty?.halfLengthMm, 400);
+});
+
+test("current difficulty catalog contains only zombies and jumpable low barriers", () => {
+  const current = getDifficultyHazardsInRange(7, SAFE_START_MM, 2_000_000);
+  assert.ok(current.some((hazard) => hazard.kind === "LOW"));
+  assert.ok(!current.some((hazard) => hazard.kind === "SOLID"));
+  assert.ok(current.filter((hazard) => hazard.kind === "LOW").every((hazard) => hazard.halfLengthMm === 400));
+  assert.ok(getPreviousDifficultyHazardsInRange(7, SAFE_START_MM, 2_000_000).some((hazard) => hazard.kind === "SOLID"));
+});
+
+test("current difficulty state has no safety distance and cannot end as caught", () => {
+  const initial = createDifficultyGameState();
+  assert.equal("hordeGapMm" in initial, false);
+  const next = advanceDifficultyGameState({ ...initial, hordeGapMm: 0 }, 42, { targetXmm: 0, jump: false }, "beginner");
+  assert.equal("hordeGapMm" in next, false);
+  assert.notEqual(next.terminalReason, "CAUGHT");
+
+  const legacy = advanceDifficultyGameState({ ...createGameState(), hordeGapMm: -10_000 }, 42, { targetXmm: 0, jump: false }, "beginner", 100, "v5");
+  assert.equal(legacy.terminalReason, "CAUGHT");
+});
+
+test("four effective current difficulty contacts end at zero stamina", () => {
+  const seed = 42;
+  const zombie = getDifficultyHazardsInRange(seed, SAFE_START_MM, 200_000).find((hazard) => hazard.kind === "ZOMBIE");
+  assert.ok(zombie);
+  let state = createDifficultyGameState();
+  for (let index = 0; index < 4; index += 1) {
+    const xMm = (zombie.lane - 1) * 2_400;
+    state = {
+      ...state,
+      tick: 100 + index * 50,
+      xMm,
+      targetXmm: xMm,
+      distanceMm: zombie.centerMm,
+      contactImmunityUntilTick: 0,
+    };
+    state = advanceDifficultyGameState(state, seed, { targetXmm: xMm, jump: false }, "beginner");
+  }
+  assert.equal(state.stamina, 0);
+  assert.equal(state.terminalReason, "EXHAUSTED");
+  assert.equal("hordeGapMm" in state, false);
 });
 
 function stateAtHazardEntry(state: GameState, hazard: GeneratedHazard, tick: number): GameState {
