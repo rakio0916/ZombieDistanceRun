@@ -17,6 +17,8 @@ export function GameScene({
   character,
   onCharacterStatus,
   onTargetX,
+  onJump,
+  onBoost,
 }: {
   game: GameState;
   seed: number;
@@ -24,12 +26,15 @@ export function GameScene({
   character: CharacterDefinition;
   onCharacterStatus: (characterId: CharacterId, status: CharacterStatus) => void;
   onTargetX: (targetXmm: number) => void;
+  onJump: () => void;
+  onBoost: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef(game);
   const seedRef = useRef(seed);
   const phaseRef = useRef(phase);
-  const gestureRef = useRef<{ pointerId: number; startX: number; originXmm: number } | null>(null);
+  const gestureRef = useRef<{ pointerId: number; startX: number; startY: number; originXmm: number; startedAt: number; moved: boolean } | null>(null);
+  const tapRef = useRef<{ at: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
     gameRef.current = game;
@@ -229,7 +234,7 @@ export function GameScene({
       disposed = true;
       cleanup();
     };
-  }, [character, onCharacterStatus, onTargetX]);
+  }, [character, onCharacterStatus]);
 
   return (
     <canvas
@@ -237,19 +242,28 @@ export function GameScene({
       className="zdr-canvas"
       aria-label="人物3Dが荒廃した市街地で前方ゾンビの隙間を走り抜けるゲーム画面"
       onPointerDown={(event) => {
-        if (gestureRef.current) return;
-        gestureRef.current = { pointerId: event.pointerId, startX: event.clientX, originXmm: gameRef.current.xMm };
+        if (phaseRef.current !== "running" || gestureRef.current) return;
+        gestureRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originXmm: gameRef.current.xMm, startedAt: performance.now(), moved: false };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
         const gesture = gestureRef.current;
         if (!gesture || gesture.pointerId !== event.pointerId) return;
+        if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 8) { gesture.moved = true; tapRef.current = null; }
         const travelPx = Math.max(120, Math.min(event.currentTarget.clientWidth, event.currentTarget.clientHeight) * 0.7);
         onTargetX(gesture.originXmm + ((event.clientX - gesture.startX) / travelPx) * 4_800);
       }}
-      onPointerUp={(event) => { if (gestureRef.current?.pointerId === event.pointerId) { onTargetX(gameRef.current.xMm); gestureRef.current = null; } }}
-      onPointerCancel={(event) => { if (gestureRef.current?.pointerId === event.pointerId) { onTargetX(gameRef.current.xMm); gestureRef.current = null; } }}
-      onLostPointerCapture={() => { onTargetX(gameRef.current.xMm); gestureRef.current = null; }}
+      onPointerUp={(event) => {
+        const gesture = gestureRef.current;
+        gestureRef.current = null;
+        if (!gesture || gesture.pointerId !== event.pointerId || gesture.moved || performance.now() - gesture.startedAt > 220) { tapRef.current = null; return; }
+        const now = performance.now();
+        const prior = tapRef.current;
+        if (prior && now - prior.at <= 280 && Math.hypot(event.clientX - prior.x, event.clientY - prior.y) <= 32) { tapRef.current = null; onBoost(); }
+        else { tapRef.current = { at: now, x: event.clientX, y: event.clientY }; onJump(); }
+      }}
+      onPointerCancel={() => { gestureRef.current = null; tapRef.current = null; }}
+      onLostPointerCapture={() => { if (gestureRef.current) { gestureRef.current = null; tapRef.current = null; } }}
     />
   );
 }

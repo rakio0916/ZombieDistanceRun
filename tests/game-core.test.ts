@@ -67,10 +67,10 @@ test("hazard generation is deterministic", () => {
 test("continuous movement reaches any target and stops there", () => {
   let state = createGameState();
   for (let tick = 0; tick < 4; tick += 1) {
-    state = advanceContinuousGameState(state, 42, { targetXmm: 730, jump: false, sprint: false });
+    state = advanceContinuousGameState(state, 42, { targetXmm: 730, jump: false, boost: false });
   }
   assert.equal(state.xMm, 730);
-  state = advanceContinuousGameState(state, 42, { targetXmm: 730, jump: false, sprint: false });
+  state = advanceContinuousGameState(state, 42, { targetXmm: 730, jump: false, boost: false });
   assert.equal(state.xMm, 730);
 });
 
@@ -87,8 +87,35 @@ test("continuous collision detects lateral entry while overlapping a hazard", ()
     distanceMm: zombie.centerMm,
     hordeGapMm: 12_000,
   };
-  const next = advanceContinuousGameState(state, seed, { targetXmm: hazardX - 900, jump: false, sprint: false });
+  const next = advanceContinuousGameState(state, seed, { targetXmm: hazardX - 900, jump: false, boost: false });
   assert.equal(next.lastContactHazardId, zombie.id);
+  assert.equal(next.stamina, 75);
+});
+
+test("four effective collisions exhaust stamina and end the run", () => {
+  const seed = 42;
+  const zombie = getHazardsInRange(seed, SAFE_START_MM, 200_000).find((hazard) => hazard.kind === "ZOMBIE");
+  assert.ok(zombie);
+  let state = createGameState();
+  for (let index = 0; index < 4; index += 1) {
+    state = { ...state, tick: 100 + index * 50, xMm: (zombie.lane - 1) * 2_400, targetXmm: (zombie.lane - 1) * 2_400, distanceMm: zombie.centerMm, hordeGapMm: 12_000, contactImmunityUntilTick: 0 };
+    state = advanceContinuousGameState(state, seed, { targetXmm: state.xMm, jump: false, boost: false });
+  }
+  assert.equal(state.stamina, 0);
+  assert.equal(state.terminalReason, "EXHAUSTED");
+});
+
+test("boost costs ten stamina once and lasts sixty ticks", () => {
+  let state = createGameState();
+  state = advanceContinuousGameState(state, 42, { targetXmm: 0, jump: false, boost: true });
+  assert.equal(state.stamina, 90);
+  assert.ok(state.boostUntilTick > state.tick);
+  state = advanceContinuousGameState(state, 42, { targetXmm: 0, jump: false, boost: true });
+  assert.equal(state.stamina, 90);
+  state = { ...state, tick: 60, boostUntilTick: 60 };
+  state = advanceContinuousGameState(state, 42, { targetXmm: 0, jump: false, boost: true });
+  assert.equal(state.stamina, 90);
+  assert.equal(state.boostCooldownUntilTick, 120);
 });
 
 function stateAtHazardEntry(state: GameState, hazard: GeneratedHazard, tick: number): GameState {

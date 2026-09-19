@@ -1,5 +1,5 @@
 import { getD1 } from "@/db";
-import { challengeDateInTokyo, LEGACY_RULESET_ID, RULESET_ID } from "@/lib/game-core";
+import { challengeDateInTokyo, CONTINUOUS_RULESET_ID, LEGACY_RULESET_ID, RULESET_ID } from "@/lib/game-core";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(challengeDate)) {
     return Response.json({ error: "INVALID_CHALLENGE_DATE" }, { status: 400 });
   }
-  if (rulesetId !== RULESET_ID && rulesetId !== LEGACY_RULESET_ID) {
+  if (rulesetId !== RULESET_ID && rulesetId !== CONTINUOUS_RULESET_ID && rulesetId !== LEGACY_RULESET_ID) {
     return Response.json({ error: "INVALID_RULESET" }, { status: 400 });
   }
   const rows = await getD1()

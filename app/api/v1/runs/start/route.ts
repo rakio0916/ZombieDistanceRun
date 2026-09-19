@@ -49,6 +49,12 @@ export async function POST() {
     .bind(now, player.player_id)
     .run();
 
+  // A closed tab must not leave a player permanently unable to begin a new run.
+  await database
+    .prepare("UPDATE runs SET status = 'REJECTED' WHERE player_id = ? AND status = 'RUNNING' AND started_at_ms < ?")
+    .bind(player.player_id, now - 31 * 60 * 1000)
+    .run();
+
   const active = await database
     .prepare("SELECT run_id FROM runs WHERE player_id = ? AND status = 'RUNNING' LIMIT 1")
     .bind(player.player_id)

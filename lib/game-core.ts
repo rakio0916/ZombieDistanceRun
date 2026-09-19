@@ -1,10 +1,11 @@
 export const TICK_RATE = 30;
 export const MAX_TICKS = 54_000;
-export const RULESET_ID = "zdr-continuous-run-v2";
+export const RULESET_ID = "zdr-gesture-run-v3";
+export const CONTINUOUS_RULESET_ID = "zdr-continuous-run-v2";
 export const FRONT_RULESET_ID = "zdr-front-run-v1";
 export const LEGACY_RULESET_ID = "zdr-canvas-legacy-2026-09-17";
-export const CORE_VERSION = "3.0.0";
-export const CATALOG_VERSION = "continuous-fixed-2";
+export const CORE_VERSION = "4.0.0";
+export const CATALOG_VERSION = "gesture-fixed-3";
 export const SAFE_START_MM = 80_000;
 export const HAZARD_LOOKAHEAD_MM = 60_000;
 
@@ -19,11 +20,14 @@ export const CONTINUOUS_MOVE_PER_TICK_MM = 200;
 const INITIAL_HORDE_GAP_MM = 12_000;
 
 export type Action = "LANE_LEFT" | "LANE_RIGHT" | "JUMP" | "SPRINT_ON" | "SPRINT_OFF";
-export type TerminalReason = "CAUGHT" | "TIME_LIMIT";
+export type TerminalReason = "CAUGHT" | "EXHAUSTED" | "TIME_LIMIT";
 export type HazardKind = "ZOMBIE" | "SOLID" | "LOW";
 
 export type GameEvent = { seq: number; tick: number; action: Action };
-export type ContinuousInput = { targetXmm: number; jump: boolean; sprint: boolean };
+/** v3 input: jump and boost are one-tick edges, never held states. */
+export type ContinuousInput = { targetXmm: number; jump: boolean; boost: boolean };
+/** Kept solely to replay v2 ranked runs. */
+export type ContinuousV2Input = { targetXmm: number; jump: boolean; sprint: boolean };
 
 export type GeneratedHazard = {
   id: string;
@@ -50,6 +54,8 @@ export type GameState = {
   jumpUntilTick: number;
   stumbleUntilTick: number;
   contactImmunityUntilTick: number;
+  boostUntilTick: number;
+  boostCooldownUntilTick: number;
   lastContactHazardId: string | null;
   terminalReason: TerminalReason | null;
 };
@@ -77,6 +83,8 @@ export function createGameState(): GameState {
     jumpUntilTick: 0,
     stumbleUntilTick: 0,
     contactImmunityUntilTick: 0,
+    boostUntilTick: 0,
+    boostCooldownUntilTick: 0,
     lastContactHazardId: null,
     terminalReason: null,
   };
@@ -94,11 +102,16 @@ export function advanceContinuousGameState(previous: GameState, seed: number, in
     state.jumpStartTick = state.tick;
     state.jumpUntilTick = state.tick + 24;
   }
-  state.sprinting = input.sprint;
+  if (input.boost && state.boostUntilTick <= state.tick && state.boostCooldownUntilTick <= state.tick && state.stamina >= 10) {
+    state.stamina -= 10;
+    state.boostUntilTick = state.tick + 60;
+    state.boostCooldownUntilTick = state.tick + 120;
+  }
+  state.sprinting = state.boostUntilTick > state.tick;
 
   const tier = Math.floor(state.distanceMm / 250_000);
   const baseSpeedMmPerSecond = 6_500 + Math.min(3_500, tier * 250);
-  const canSprint = state.sprinting && state.stamina > 0;
+  const canSprint = state.sprinting;
   const stumbling = state.stumbleUntilTick > state.tick;
   const intendedSpeed = baseSpeedMmPerSecond + (canSprint ? 2_000 : 0);
   const playerSpeedMmPerSecond = stumbling ? Math.floor(intendedSpeed / 2) : intendedSpeed;
@@ -107,11 +120,13 @@ export function advanceContinuousGameState(previous: GameState, seed: number, in
   const distanceWithRemainder = state.distanceRemainder + playerSpeedMmPerSecond;
   state.distanceMm += Math.floor(distanceWithRemainder / TICK_RATE);
   state.distanceRemainder = distanceWithRemainder % TICK_RATE;
-  state.hordeGapMm += Math.trunc((playerSpeedMmPerSecond - hordeSpeedMmPerSecond) / TICK_RATE);
-  updateStamina(state, canSprint);
-  applyContinuousHazardContact(state, seed, previousXmm, previousDistanceMm);
+  state.hordeGapMm = Math.min(INITIAL_HORDE_GAP_MM, state.hordeGapMm + Math.trunc((playerSpeedMmPerSecond - hordeSpeedMmPerSecond) / TICK_RATE));
+  applyGestureHazardContact(state, seed, previousXmm, previousDistanceMm);
   state.tick += 1;
-  if (state.hordeGapMm <= 0) {
+  if (state.stamina <= 0) {
+    state.stamina = 0;
+    state.terminalReason = "EXHAUSTED";
+  } else if (state.hordeGapMm <= 0) {
     state.hordeGapMm = 0;
     state.terminalReason = "CAUGHT";
   } else if (state.tick >= MAX_TICKS) state.terminalReason = "TIME_LIMIT";
@@ -190,6 +205,45 @@ export function runContinuousSimulation(seed: number, inputs: readonly Continuou
   }
   if (!state.terminalReason || state.tick !== inputs.length) return null;
   return { ...state, durationTicks: state.tick, distanceCm: Math.floor(state.distanceMm / 10), crowdCount: 6 + 3 * Math.floor(state.distanceMm / 250_000) };
+}
+
+/** Replays the former continuous-v2 contract without applying v3 damage rules. */
+export function runContinuousV2Simulation(seed: number, inputs: readonly ContinuousV2Input[]): SimulationResult | null {
+  if (inputs.length < 1 || inputs.length > MAX_TICKS) return null;
+  let state = createGameState();
+  for (const input of inputs) {
+    if (state.terminalReason || !Number.isInteger(input.targetXmm) || input.targetXmm < -ROAD_HALF_WIDTH_MM || input.targetXmm > ROAD_HALF_WIDTH_MM) return null;
+    state = advanceContinuousV2GameState(state, seed, input);
+  }
+  if (!state.terminalReason || state.tick !== inputs.length) return null;
+  return { ...state, durationTicks: state.tick, distanceCm: Math.floor(state.distanceMm / 10), crowdCount: 6 + 3 * Math.floor(state.distanceMm / 250_000) };
+}
+
+function advanceContinuousV2GameState(previous: GameState, seed: number, input: ContinuousV2Input): GameState {
+  if (previous.terminalReason) return previous;
+  const state = { ...previous, lastContactHazardId: null };
+  const previousXmm = state.xMm;
+  state.targetXmm = clampInteger(input.targetXmm, -ROAD_HALF_WIDTH_MM, ROAD_HALF_WIDTH_MM);
+  state.xMm += clampInteger(state.targetXmm - state.xMm, -CONTINUOUS_MOVE_PER_TICK_MM, CONTINUOUS_MOVE_PER_TICK_MM);
+  state.lanePositionMilli = 1_000 + Math.round(state.xMm / 2.4);
+  state.lane = Math.max(0, Math.min(2, Math.round(state.lanePositionMilli / LANE_STEP)));
+  if (input.jump && state.jumpUntilTick <= state.tick) { state.jumpStartTick = state.tick; state.jumpUntilTick = state.tick + 24; }
+  state.sprinting = input.sprint;
+  const tier = Math.floor(state.distanceMm / 250_000);
+  const base = 6_500 + Math.min(3_500, tier * 250);
+  const speed = state.stumbleUntilTick > state.tick ? Math.floor((base + (state.sprinting && state.stamina > 0 ? 2_000 : 0)) / 2) : base + (state.sprinting && state.stamina > 0 ? 2_000 : 0);
+  const horde = 5_900 + Math.min(5_100, tier * 300);
+  const previousDistanceMm = state.distanceMm;
+  const withRemainder = state.distanceRemainder + speed;
+  state.distanceMm += Math.floor(withRemainder / TICK_RATE);
+  state.distanceRemainder = withRemainder % TICK_RATE;
+  state.hordeGapMm += Math.trunc((speed - horde) / TICK_RATE);
+  updateStamina(state, state.sprinting && state.stamina > 0);
+  applyContinuousHazardContact(state, seed, previousXmm, previousDistanceMm);
+  state.tick += 1;
+  if (state.hordeGapMm <= 0) { state.hordeGapMm = 0; state.terminalReason = "CAUGHT"; }
+  else if (state.tick >= MAX_TICKS) state.terminalReason = "TIME_LIMIT";
+  return state;
 }
 
 function runValidatedSimulation(
@@ -291,7 +345,7 @@ function isJumpClear(state: GameState): boolean {
   return phase >= 6 && phase <= 18 && state.jumpUntilTick > state.tick;
 }
 
-function applyContinuousHazardContact(
+function applyGestureHazardContact(
   state: GameState,
   seed: number,
   previousXmm: number,
@@ -310,6 +364,34 @@ function applyContinuousHazardContact(
     const expandedHalfWidth = PLAYER_HALF_WIDTH_MM + hazardHalfWidthMm;
     const overlapsSide = Math.min(startDelta, endDelta) <= expandedHalfWidth && Math.max(startDelta, endDelta) >= -expandedHalfWidth;
     return overlapsForward && overlapsSide && (hazard.kind !== "LOW" || !isJumpClear(state));
+  });
+  if (!contacted || state.contactImmunityUntilTick > state.tick) return;
+  state.stamina = Math.max(0, state.stamina - 25);
+  state.hordeGapMm = Math.max(0, state.hordeGapMm - 4_000);
+  state.stumbleUntilTick = state.tick + 24;
+  state.contactImmunityUntilTick = state.tick + 45;
+  state.boostUntilTick = 0;
+  state.boostCooldownUntilTick = state.tick + 120;
+  state.sprinting = false;
+  state.lastContactHazardId = contacted.id;
+}
+
+function applyContinuousHazardContact(
+  state: GameState,
+  seed: number,
+  previousXmm: number,
+  previousDistanceMm: number,
+): void {
+  const start = previousDistanceMm - PLAYER_HALF_LENGTH_MM - 1_600;
+  const end = state.distanceMm + PLAYER_HALF_LENGTH_MM + 1_600;
+  const contacted = getHazardsInRange(seed, start, end).find((hazard) => {
+    const hazardXmm = (hazard.lane - 1) * 2_400;
+    const hazardHalfWidthMm = hazard.kind === "SOLID" ? 900 : hazard.kind === "LOW" ? 910 : 470;
+    const overlapsForward = state.distanceMm + PLAYER_HALF_LENGTH_MM >= hazard.centerMm - hazard.halfLengthMm && previousDistanceMm - PLAYER_HALF_LENGTH_MM <= hazard.centerMm + hazard.halfLengthMm;
+    const startDelta = previousXmm - hazardXmm;
+    const endDelta = state.xMm - hazardXmm;
+    const expandedHalfWidth = PLAYER_HALF_WIDTH_MM + hazardHalfWidthMm;
+    return overlapsForward && Math.min(startDelta, endDelta) <= expandedHalfWidth && Math.max(startDelta, endDelta) >= -expandedHalfWidth && (hazard.kind !== "LOW" || !isJumpClear(state));
   });
   if (!contacted || state.contactImmunityUntilTick > state.tick) return;
   state.hordeGapMm -= 4_000;

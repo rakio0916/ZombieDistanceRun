@@ -267,3 +267,20 @@ button, a { font: inherit; }
   .zdr-caught { animation: none; }
   .zdr-gap b, .zdr-stamina b { transition: none; }
 }
+
+/* Gesture-run v3: selection is reachable before the play surface on phones. */
+.zdr-character-select--game { position: relative; z-index: 6; margin: 0 0 10px; padding: .65rem .8rem; }
+.zdr-character-select--game h2 { margin-bottom: .45rem; }
+.zdr-character-select--game button { min-height: 48px; padding: .42rem .55rem; }
+.zdr-character-select--game button span { font-size: .68rem; }
+.zdr-game-status { min-height: 24px; }
+.zdr-scene-title { top: 160px; }
+.zdr-hud { top: 115px; }
+.zdr-load-state, .zdr-caught { inset: 103px 18px 78px; }
+@media (max-width: 480px) {
+  .zdr-character-select--game { margin-bottom: 7px; }
+  .zdr-canvas { height: min(58svh, 500px); min-height: 330px; }
+  .zdr-scene-title { top: 150px; }
+  .zdr-hud { top: 145px; }
+  .zdr-load-state, .zdr-caught { inset: 103px 7px 78px; }
+}

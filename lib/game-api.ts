@@ -1,4 +1,4 @@
-import { MAX_TICKS, ROAD_HALF_WIDTH_MM, type Action, type ContinuousInput, type GameEvent, type TerminalReason } from "./game-core.ts";
+import { MAX_TICKS, ROAD_HALF_WIDTH_MM, type Action, type ContinuousInput, type ContinuousV2Input, type GameEvent, type TerminalReason } from "./game-core.ts";
 
 const actions = new Set<Action>([
   "LANE_LEFT",
@@ -23,8 +23,15 @@ export type ContinuousFinishPayload = {
   terminal_reason: TerminalReason;
   input_b64: string;
 };
+export type GestureFinishPayload = {
+  schema_version: "3.0.0";
+  submission_id: string;
+  final_tick: number;
+  terminal_reason: TerminalReason;
+  input_b64: string;
+};
 
-export type FinishPayload = LegacyFinishPayload | ContinuousFinishPayload;
+export type FinishPayload = LegacyFinishPayload | ContinuousFinishPayload | GestureFinishPayload;
 
 export function parseFinishPayload(value: unknown): FinishPayload | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -42,6 +49,17 @@ export function parseFinishPayload(value: unknown): FinishPayload | null {
     const decoded = decodeContinuousInputs(body.input_b64, body.final_tick as number);
     if (!decoded) return null;
     return { schema_version: "2.0.0", submission_id: body.submission_id, final_tick: body.final_tick as number, terminal_reason: body.terminal_reason, input_b64: body.input_b64 };
+  }
+  if (body.schema_version === "3.0.0") {
+    if (
+      keys.length !== 5 ||
+      !keys.every((key) => ["schema_version", "submission_id", "final_tick", "terminal_reason", "input_b64"].includes(key)) ||
+      typeof body.submission_id !== "string" || !isUuid(body.submission_id) ||
+      !Number.isInteger(body.final_tick) || (body.final_tick as number) < 1 || (body.final_tick as number) > MAX_TICKS ||
+      (body.terminal_reason !== "CAUGHT" && body.terminal_reason !== "EXHAUSTED" && body.terminal_reason !== "TIME_LIMIT") ||
+      typeof body.input_b64 !== "string" || !decodeGestureInputs(body.input_b64, body.final_tick as number)
+    ) return null;
+    return { schema_version: "3.0.0", submission_id: body.submission_id, final_tick: body.final_tick as number, terminal_reason: body.terminal_reason, input_b64: body.input_b64 };
   }
   if (
     keys.length !== 5 ||
@@ -83,7 +101,7 @@ export function parseFinishPayload(value: unknown): FinishPayload | null {
   };
 }
 
-export function encodeContinuousInputs(inputs: readonly ContinuousInput[]): string {
+export function encodeContinuousInputs(inputs: readonly ContinuousV2Input[]): string {
   const bytes = new Uint8Array(inputs.length * 2);
   inputs.forEach((input, index) => {
     const targetIndex = Math.round((input.targetXmm + ROAD_HALF_WIDTH_MM) / 10);
@@ -96,7 +114,37 @@ export function encodeContinuousInputs(inputs: readonly ContinuousInput[]): stri
   return btoa(binary);
 }
 
-export function decodeContinuousInputs(value: string, finalTick: number): ContinuousInput[] | null {
+export function decodeContinuousInputs(value: string, finalTick: number): ContinuousV2Input[] | null {
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return null;
+  let binary: string;
+  try { binary = atob(value); } catch { return null; }
+  if (binary.length !== finalTick * 2) return null;
+  const inputs: ContinuousV2Input[] = [];
+  for (let index = 0; index < finalTick; index += 1) {
+    const word = binary.charCodeAt(index * 2) | (binary.charCodeAt(index * 2 + 1) << 8);
+    if ((word & 0xf800) !== 0) return null;
+    const targetIndex = word & 0x1ff;
+    if (targetIndex > 480) return null;
+    inputs.push({ targetXmm: -ROAD_HALF_WIDTH_MM + targetIndex * 10, jump: (word & (1 << 9)) !== 0, sprint: (word & (1 << 10)) !== 0 });
+  }
+  return inputs;
+}
+
+export function encodeGestureInputs(inputs: readonly ContinuousInput[]): string {
+  const bytes = new Uint8Array(inputs.length * 2);
+  inputs.forEach((input, index) => {
+    const targetIndex = Math.round((input.targetXmm + ROAD_HALF_WIDTH_MM) / 10);
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > 480) throw new Error("TARGET_OUT_OF_RANGE");
+    const word = targetIndex | (input.jump ? 1 << 9 : 0) | (input.boost ? 1 << 10 : 0);
+    bytes[index * 2] = word & 0xff;
+    bytes[index * 2 + 1] = word >>> 8;
+  });
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+export function decodeGestureInputs(value: string, finalTick: number): ContinuousInput[] | null {
   if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return null;
   let binary: string;
   try { binary = atob(value); } catch { return null; }
@@ -104,10 +152,8 @@ export function decodeContinuousInputs(value: string, finalTick: number): Contin
   const inputs: ContinuousInput[] = [];
   for (let index = 0; index < finalTick; index += 1) {
     const word = binary.charCodeAt(index * 2) | (binary.charCodeAt(index * 2 + 1) << 8);
-    if ((word & 0xf800) !== 0) return null;
-    const targetIndex = word & 0x1ff;
-    if (targetIndex > 480) return null;
-    inputs.push({ targetXmm: -ROAD_HALF_WIDTH_MM + targetIndex * 10, jump: (word & (1 << 9)) !== 0, sprint: (word & (1 << 10)) !== 0 });
+    if ((word & 0xf800) !== 0 || (word & 0x1ff) > 480) return null;
+    inputs.push({ targetXmm: -ROAD_HALF_WIDTH_MM + (word & 0x1ff) * 10, jump: (word & (1 << 9)) !== 0, boost: (word & (1 << 10)) !== 0 });
   }
   return inputs;
 }

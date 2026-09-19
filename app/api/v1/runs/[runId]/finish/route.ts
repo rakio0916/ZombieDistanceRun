@@ -1,7 +1,7 @@
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getD1 } from "@/db";
-import { decodeContinuousInputs, parseFinishPayload } from "@/lib/game-api";
-import { RULESET_ID, runContinuousSimulation, runSimulationForRuleset } from "@/lib/game-core";
+import { decodeContinuousInputs, decodeGestureInputs, parseFinishPayload } from "@/lib/game-api";
+import { CONTINUOUS_RULESET_ID, RULESET_ID, runContinuousSimulation, runContinuousV2Simulation, runSimulationForRuleset } from "@/lib/game-core";
 
 type RunRow = {
   run_id: string;
@@ -49,8 +49,10 @@ export async function POST(
   }
   if (row.status !== "RUNNING") return json({ error: "RUN_STATE_CONFLICT" }, 409);
 
-  const result = payload.schema_version === "2.0.0" && row.ruleset_id === RULESET_ID
-    ? runContinuousSimulation(row.seed, decodeContinuousInputs(payload.input_b64, payload.final_tick) ?? [])
+  const result = payload.schema_version === "3.0.0" && row.ruleset_id === RULESET_ID
+    ? runContinuousSimulation(row.seed, decodeGestureInputs(payload.input_b64, payload.final_tick) ?? [])
+    : payload.schema_version === "2.0.0" && row.ruleset_id === CONTINUOUS_RULESET_ID
+      ? runContinuousV2Simulation(row.seed, decodeContinuousInputs(payload.input_b64, payload.final_tick) ?? [])
     : payload.schema_version === "1.0.0" && row.ruleset_id !== RULESET_ID
       ? runSimulationForRuleset(row.ruleset_id, row.seed, payload.final_tick, payload.events)
       : null;
@@ -60,8 +62,10 @@ export async function POST(
 
   const now = Date.now();
   const inputSha = await sha256(
-    payload.schema_version === "2.0.0"
-      ? `continuous-input-v1\u0000${payload.final_tick}\u0000${payload.input_b64}`
+    payload.schema_version === "3.0.0"
+      ? `gesture-input-v1\u0000${payload.final_tick}\u0000${payload.input_b64}`
+      : payload.schema_version === "2.0.0"
+        ? `continuous-input-v1\u0000${payload.final_tick}\u0000${payload.input_b64}`
       : raw,
   );
   const existingBest = await database
