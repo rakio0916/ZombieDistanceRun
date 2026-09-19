@@ -3,24 +3,26 @@
 import { useEffect, useRef } from "react";
 import type { AnimationAction, Group, Mesh, Object3D } from "three";
 import { getHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
+import type { CharacterDefinition, CharacterId } from "./characters";
 
-type Phase = "ready" | "running" | "saving" | "ended";
+type Phase = "ready" | "starting" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
 
-const CHARACTER_URL = "/game/characters/runner_001/v4/CH_runner_001_Web_v4.glb";
 const REQUIRED_CLIPS = ["Web_Idle", "Run_03", "Web_Jump", "Web_Stumble", "Web_Caught"] as const;
 
 export function GameScene({
   game,
   seed,
   phase,
+  character,
   onCharacterStatus,
   onTargetX,
 }: {
   game: GameState;
   seed: number;
   phase: Phase;
-  onCharacterStatus: (status: CharacterStatus) => void;
+  character: CharacterDefinition;
+  onCharacterStatus: (characterId: CharacterId, status: CharacterStatus) => void;
   onTargetX: (targetXmm: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -87,14 +89,18 @@ export function GameScene({
       let activeAction: AnimationAction | null = null;
       let activeClip = "";
 
-      onCharacterStatus("loading");
+      onCharacterStatus(character.id, "loading");
       new GLTFLoader().load(
-        CHARACTER_URL,
+        character.url,
         (gltf) => {
-          if (disposed) return;
+          if (disposed) {
+            disposeObject(gltf.scene);
+            return;
+          }
           const missing = REQUIRED_CLIPS.filter((name) => !gltf.animations.some((clip) => clip.name === name));
           if (missing.length > 0) {
-            onCharacterStatus("error");
+            disposeObject(gltf.scene);
+            onCharacterStatus(character.id, "error");
             return;
           }
           const model = gltf.scene;
@@ -116,10 +122,12 @@ export function GameScene({
             }
             actions.set(clip.name, action);
           }
-          onCharacterStatus("ready");
+          onCharacterStatus(character.id, "ready");
         },
         undefined,
-        () => onCharacterStatus("error"),
+        () => {
+          if (!disposed) onCharacterStatus(character.id, "error");
+        },
       );
 
       const hazardMeshes = new Map<string, Group>();
@@ -221,7 +229,7 @@ export function GameScene({
       disposed = true;
       cleanup();
     };
-  }, [onCharacterStatus]);
+  }, [character, onCharacterStatus, onTargetX]);
 
   return (
     <canvas
@@ -520,6 +528,12 @@ function disposeObject(root: Object3D) {
     if (!mesh.isMesh) return;
     mesh.geometry?.dispose();
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const material of materials) material?.dispose();
+    for (const material of materials) {
+      if (!material) continue;
+      for (const value of Object.values(material)) {
+        if (value && typeof value === "object" && "isTexture" in value && value.isTexture) value.dispose();
+      }
+      material.dispose();
+    }
   });
 }

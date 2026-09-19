@@ -231,6 +231,12 @@ button, a { font: inherit; }
 .zdr-kicker { color: #e6a24c; }
 .zdr-panel h1 { color: #f4efe7; font-size: clamp(2rem, 3.6vw, 3.4rem); letter-spacing: -.055em; }
 .zdr-notice { background: rgba(255,255,255,.045); border-left-color: #e6a24c; color: #dcd4c8; }
+.zdr-character-select { margin: 1.35rem 0; padding: 1rem; border: 1px solid rgba(231,187,126,.2); background: rgba(0,0,0,.16); }
+.zdr-character-select h2 { margin: 0 0 .7rem; font-size: 1rem; color: #f4efe7; }
+.zdr-character-select > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.zdr-character-select button { min-height: 66px; padding: .6rem .7rem; color: #d6dbe1; text-align: left; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.035); cursor: pointer; }
+.zdr-character-select button b, .zdr-character-select button span { display: block; }.zdr-character-select button b { color: #f4efe7; }.zdr-character-select button span { margin-top: .2rem; font-size: .75rem; color: #aeb7c3; }
+.zdr-character-select button.is-selected { border-color: #e6a24c; background: rgba(230,162,76,.16); box-shadow: inset 3px 0 #e6a24c; }.zdr-character-select button:disabled { cursor: not-allowed; opacity: .55; }.zdr-character-select > p { margin: .7rem 0 0; color: #aeb7c3; font-size: .78rem; line-height: 1.5; }
 .zdr-rules { border-color: rgba(255,255,255,.13); }
 .zdr-rules div, .zdr-board li { border-color: rgba(255,255,255,.1); }
 .zdr-rules dd, .zdr-board > p, .zdr-board li em { color: #aeb7c3; }
