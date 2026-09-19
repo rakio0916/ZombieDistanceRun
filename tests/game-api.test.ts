@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decodeContinuousInputs, decodeGestureInputs, encodeContinuousInputs, encodeGestureInputs, parseFinishPayload } from "../lib/game-api.ts";
+import {
+  decodeContinuousInputs,
+  decodeDifficultyInputs,
+  decodeGestureInputs,
+  encodeContinuousInputs,
+  encodeDifficultyInputs,
+  encodeGestureInputs,
+  parseFinishPayload,
+} from "../lib/game-api.ts";
 
 test("continuous input encoding survives an exact server round trip", () => {
   const inputs = [
@@ -32,4 +40,26 @@ test("gesture inputs retain boost edges and accept exhaustion", () => {
   const input_b64 = encodeGestureInputs(inputs);
   assert.deepEqual(decodeGestureInputs(input_b64, inputs.length), inputs);
   assert.ok(parseFinishPayload({ schema_version: "3.0.0", submission_id: "123e4567-e89b-42d3-a456-426614174000", final_tick: 2, terminal_reason: "EXHAUSTED", input_b64 }));
+});
+
+test("difficulty inputs round trip without a boost bit", () => {
+  const inputs = [
+    { targetXmm: -2400, jump: false },
+    { targetXmm: 730, jump: true },
+    { targetXmm: 2400, jump: false },
+  ];
+  const input_b64 = encodeDifficultyInputs(inputs);
+  assert.deepEqual(decodeDifficultyInputs(input_b64, inputs.length), inputs);
+  assert.ok(parseFinishPayload({
+    schema_version: "4.0.0",
+    submission_id: "123e4567-e89b-42d3-a456-426614174000",
+    final_tick: inputs.length,
+    terminal_reason: "EXHAUSTED",
+    input_b64,
+  }));
+});
+
+test("difficulty inputs reject former boost and reserved bits", () => {
+  const input_b64 = Buffer.from(Uint16Array.of(1 << 10).buffer).toString("base64");
+  assert.equal(decodeDifficultyInputs(input_b64, 1), null);
 });

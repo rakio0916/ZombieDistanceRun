@@ -1,14 +1,22 @@
 import { getD1 } from "@/db";
-import { challengeDateInTokyo, CONTINUOUS_RULESET_ID, LEGACY_RULESET_ID, RULESET_ID } from "@/lib/game-core";
+import { challengeDateInTokyo, CONTINUOUS_RULESET_ID, DIFFICULTY_RULESET_IDS, FRONT_RULESET_ID, LEGACY_RULESET_ID, RULESET_ID } from "@/lib/game-core";
+
+const allowedRulesets = new Set<string>([
+  ...Object.values(DIFFICULTY_RULESET_IDS),
+  RULESET_ID,
+  CONTINUOUS_RULESET_ID,
+  FRONT_RULESET_ID,
+  LEGACY_RULESET_ID,
+]);
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const challengeDate = url.searchParams.get("challenge_date") ?? challengeDateInTokyo();
-  const rulesetId = url.searchParams.get("ruleset_id") ?? RULESET_ID;
+  const rulesetId = url.searchParams.get("ruleset_id") ?? DIFFICULTY_RULESET_IDS.beginner;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(challengeDate)) {
     return Response.json({ error: "INVALID_CHALLENGE_DATE" }, { status: 400 });
   }
-  if (rulesetId !== RULESET_ID && rulesetId !== CONTINUOUS_RULESET_ID && rulesetId !== LEGACY_RULESET_ID) {
+  if (!allowedRulesets.has(rulesetId)) {
     return Response.json({ error: "INVALID_RULESET" }, { status: 400 });
   }
   const rows = await getD1()

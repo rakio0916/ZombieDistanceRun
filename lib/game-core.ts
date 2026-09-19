@@ -1,6 +1,13 @@
 export const TICK_RATE = 30;
 export const MAX_TICKS = 54_000;
 export const RULESET_ID = "zdr-gesture-run-v3";
+export const DIFFICULTY_RULESET_IDS = {
+  beginner: "zdr-difficulty-beginner-v4",
+  intermediate: "zdr-difficulty-intermediate-v4",
+  advanced: "zdr-difficulty-advanced-v4",
+} as const;
+export const DIFFICULTY_CORE_VERSION = "5.0.0";
+export const DIFFICULTY_CATALOG_VERSION = "zdr-difficulty-course-v4";
 export const CONTINUOUS_RULESET_ID = "zdr-continuous-run-v2";
 export const FRONT_RULESET_ID = "zdr-front-run-v1";
 export const LEGACY_RULESET_ID = "zdr-canvas-legacy-2026-09-17";
@@ -22,10 +29,12 @@ const INITIAL_HORDE_GAP_MM = 12_000;
 export type Action = "LANE_LEFT" | "LANE_RIGHT" | "JUMP" | "SPRINT_ON" | "SPRINT_OFF";
 export type TerminalReason = "CAUGHT" | "EXHAUSTED" | "TIME_LIMIT";
 export type HazardKind = "ZOMBIE" | "SOLID" | "LOW";
+export type Difficulty = keyof typeof DIFFICULTY_RULESET_IDS;
 
 export type GameEvent = { seq: number; tick: number; action: Action };
 /** v3 input: jump and boost are one-tick edges, never held states. */
 export type ContinuousInput = { targetXmm: number; jump: boolean; boost: boolean };
+export type DifficultyInput = { targetXmm: number; jump: boolean };
 /** Kept solely to replay v2 ranked runs. */
 export type ContinuousV2Input = { targetXmm: number; jump: boolean; sprint: boolean };
 
@@ -133,6 +142,59 @@ export function advanceContinuousGameState(previous: GameState, seed: number, in
   return state;
 }
 
+export function isDifficulty(value: unknown): value is Difficulty {
+  return value === "beginner" || value === "intermediate" || value === "advanced";
+}
+
+export function difficultyForRuleset(rulesetId: string): Difficulty | null {
+  for (const difficulty of Object.keys(DIFFICULTY_RULESET_IDS) as Difficulty[]) {
+    if (DIFFICULTY_RULESET_IDS[difficulty] === rulesetId) return difficulty;
+  }
+  return null;
+}
+
+export function advanceDifficultyGameState(
+  previous: GameState,
+  seed: number,
+  input: DifficultyInput,
+  difficulty: Difficulty,
+): GameState {
+  if (previous.terminalReason) return previous;
+  const state = { ...previous, lastContactHazardId: null, sprinting: false, boostUntilTick: 0, boostCooldownUntilTick: 0 };
+  const previousXmm = state.xMm;
+  state.targetXmm = clampInteger(input.targetXmm, -ROAD_HALF_WIDTH_MM, ROAD_HALF_WIDTH_MM);
+  state.xMm += clampInteger(state.targetXmm - state.xMm, -CONTINUOUS_MOVE_PER_TICK_MM, CONTINUOUS_MOVE_PER_TICK_MM);
+  state.lanePositionMilli = 1_000 + Math.round(state.xMm / 2.4);
+  state.lane = Math.max(0, Math.min(2, Math.round(state.lanePositionMilli / LANE_STEP)));
+  if (input.jump && state.jumpUntilTick <= state.tick) {
+    state.jumpStartTick = state.tick;
+    state.jumpUntilTick = state.tick + 24;
+  }
+
+  const percent = difficulty === "beginner" ? 85 : difficulty === "advanced" ? 120 : 100;
+  const tier = Math.floor(state.distanceMm / 250_000);
+  const baseSpeed = 6_500 + Math.min(3_500, tier * 250);
+  const hordeBaseSpeed = 5_900 + Math.min(5_100, tier * 300);
+  const intendedSpeed = Math.floor((baseSpeed * percent) / 100);
+  const playerSpeed = state.stumbleUntilTick > state.tick ? Math.floor(intendedSpeed / 2) : intendedSpeed;
+  const hordeSpeed = Math.floor((hordeBaseSpeed * percent) / 100);
+  const previousDistanceMm = state.distanceMm;
+  const withRemainder = state.distanceRemainder + playerSpeed;
+  state.distanceMm += Math.floor(withRemainder / TICK_RATE);
+  state.distanceRemainder = withRemainder % TICK_RATE;
+  state.hordeGapMm = Math.min(INITIAL_HORDE_GAP_MM, state.hordeGapMm + Math.trunc((playerSpeed - hordeSpeed) / TICK_RATE));
+  applyDifficultyHazardContact(state, seed, previousXmm, previousDistanceMm);
+  state.tick += 1;
+  if (state.stamina <= 0) {
+    state.stamina = 0;
+    state.terminalReason = "EXHAUSTED";
+  } else if (state.hordeGapMm <= 0) {
+    state.hordeGapMm = 0;
+    state.terminalReason = "CAUGHT";
+  } else if (state.tick >= MAX_TICKS) state.terminalReason = "TIME_LIMIT";
+  return state;
+}
+
 export function advanceGameState(previous: GameState, seed: number, events: readonly GameEvent[]): GameState {
   if (previous.terminalReason) return previous;
   const state = { ...previous, lastContactHazardId: null };
@@ -169,7 +231,22 @@ export function getHazardsInRange(seed: number, startMm: number, endMm: number):
   const lastIndex = Math.max(firstIndex, Math.ceil((endMm - FIRST_ENCOUNTER_MM + 2_500) / ENCOUNTER_SPACING_MM));
   const hazards: GeneratedHazard[] = [];
   for (let encounterIndex = firstIndex; encounterIndex <= lastIndex; encounterIndex += 1) {
-    for (const hazard of hazardsForEncounter(seed, encounterIndex)) {
+    for (const hazard of hazardsForEncounter(seed, encounterIndex, 550)) {
+      const hazardStart = hazard.centerMm - hazard.halfLengthMm;
+      const hazardEnd = hazard.centerMm + hazard.halfLengthMm;
+      if (hazardEnd >= startMm && hazardStart <= endMm) hazards.push(hazard);
+    }
+  }
+  return hazards.sort((left, right) => left.centerMm - right.centerMm || left.lane - right.lane);
+}
+
+export function getDifficultyHazardsInRange(seed: number, startMm: number, endMm: number): GeneratedHazard[] {
+  if (endMm < SAFE_START_MM || endMm < startMm) return [];
+  const firstIndex = Math.max(0, Math.floor((startMm - FIRST_ENCOUNTER_MM - 2_500) / ENCOUNTER_SPACING_MM));
+  const lastIndex = Math.max(firstIndex, Math.ceil((endMm - FIRST_ENCOUNTER_MM + 2_500) / ENCOUNTER_SPACING_MM));
+  const hazards: GeneratedHazard[] = [];
+  for (let encounterIndex = firstIndex; encounterIndex <= lastIndex; encounterIndex += 1) {
+    for (const hazard of hazardsForEncounter(seed, encounterIndex, 400)) {
       const hazardStart = hazard.centerMm - hazard.halfLengthMm;
       const hazardEnd = hazard.centerMm + hazard.halfLengthMm;
       if (hazardEnd >= startMm && hazardStart <= endMm) hazards.push(hazard);
@@ -202,6 +279,18 @@ export function runContinuousSimulation(seed: number, inputs: readonly Continuou
     if (state.terminalReason) return null;
     if (!Number.isInteger(input.targetXmm) || input.targetXmm < -ROAD_HALF_WIDTH_MM || input.targetXmm > ROAD_HALF_WIDTH_MM) return null;
     state = advanceContinuousGameState(state, seed, input);
+  }
+  if (!state.terminalReason || state.tick !== inputs.length) return null;
+  return { ...state, durationTicks: state.tick, distanceCm: Math.floor(state.distanceMm / 10), crowdCount: 6 + 3 * Math.floor(state.distanceMm / 250_000) };
+}
+
+export function runDifficultySimulation(seed: number, inputs: readonly DifficultyInput[], difficulty: Difficulty): SimulationResult | null {
+  if (inputs.length < 1 || inputs.length > MAX_TICKS) return null;
+  let state = createGameState();
+  for (const input of inputs) {
+    if (state.terminalReason) return null;
+    if (!Number.isInteger(input.targetXmm) || input.targetXmm < -ROAD_HALF_WIDTH_MM || input.targetXmm > ROAD_HALF_WIDTH_MM) return null;
+    state = advanceDifficultyGameState(state, seed, input, difficulty);
   }
   if (!state.terminalReason || state.tick !== inputs.length) return null;
   return { ...state, durationTicks: state.tick, distanceCm: Math.floor(state.distanceMm / 10), crowdCount: 6 + 3 * Math.floor(state.distanceMm / 250_000) };
@@ -276,7 +365,7 @@ function runValidatedSimulation(
   };
 }
 
-function hazardsForEncounter(seed: number, encounterIndex: number): GeneratedHazard[] {
+function hazardsForEncounter(seed: number, encounterIndex: number, lowHalfLengthMm: number): GeneratedHazard[] {
   const centerMm = FIRST_ENCOUNTER_MM + encounterIndex * ENCOUNTER_SPACING_MM;
   const random = hash32(seed ^ Math.imul(encounterIndex + 1, 0x9e3779b1));
   const safeLane = (random % 3) as 0 | 1 | 2;
@@ -290,7 +379,7 @@ function hazardsForEncounter(seed: number, encounterIndex: number): GeneratedHaz
       kind,
       lane,
       centerMm,
-      halfLengthMm: kind === "SOLID" ? 1_600 : kind === "LOW" ? 550 : 450,
+      halfLengthMm: kind === "SOLID" ? 1_600 : kind === "LOW" ? lowHalfLengthMm : 450,
       visualArchetype: kind === "ZOMBIE" ? "zombie-standing" : kind === "SOLID" ? "wrecked-car" : "road-barrier",
     };
   });
@@ -373,6 +462,34 @@ function applyGestureHazardContact(
   state.boostUntilTick = 0;
   state.boostCooldownUntilTick = state.tick + 120;
   state.sprinting = false;
+  state.lastContactHazardId = contacted.id;
+}
+
+function applyDifficultyHazardContact(
+  state: GameState,
+  seed: number,
+  previousXmm: number,
+  previousDistanceMm: number,
+): void {
+  const start = previousDistanceMm - PLAYER_HALF_LENGTH_MM - 1_600;
+  const end = state.distanceMm + PLAYER_HALF_LENGTH_MM + 1_600;
+  const contacted = getDifficultyHazardsInRange(seed, start, end).find((hazard) => {
+    const hazardXmm = (hazard.lane - 1) * 2_400;
+    const hazardHalfWidthMm = hazard.kind === "SOLID" ? 900 : hazard.kind === "LOW" ? 910 : 470;
+    const overlapsForward =
+      state.distanceMm + PLAYER_HALF_LENGTH_MM >= hazard.centerMm - hazard.halfLengthMm &&
+      previousDistanceMm - PLAYER_HALF_LENGTH_MM <= hazard.centerMm + hazard.halfLengthMm;
+    const startDelta = previousXmm - hazardXmm;
+    const endDelta = state.xMm - hazardXmm;
+    const expandedHalfWidth = PLAYER_HALF_WIDTH_MM + hazardHalfWidthMm;
+    const overlapsSide = Math.min(startDelta, endDelta) <= expandedHalfWidth && Math.max(startDelta, endDelta) >= -expandedHalfWidth;
+    return overlapsForward && overlapsSide && (hazard.kind !== "LOW" || !isJumpClear(state));
+  });
+  if (!contacted || state.contactImmunityUntilTick > state.tick) return;
+  state.stamina = Math.max(0, state.stamina - 25);
+  state.hordeGapMm = Math.max(0, state.hordeGapMm - 4_000);
+  state.stumbleUntilTick = state.tick + 24;
+  state.contactImmunityUntilTick = state.tick + 45;
   state.lastContactHazardId = contacted.id;
 }
 

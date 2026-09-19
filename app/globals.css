@@ -284,3 +284,65 @@ button, a { font: inherit; }
   .zdr-hud { top: 145px; }
   .zdr-load-state, .zdr-caught { inset: 103px 7px 78px; }
 }
+
+/* Difficulty-run v4: setup is a real start screen and disappears during a run. */
+.zdr-game { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 9px; }
+.zdr-shell.is-active { grid-template-columns: 1fr; }
+.zdr-game.is-active { min-height: calc(100dvh - 52px); padding: 7px; }
+.zdr-setup { position: relative; z-index: 7; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto; gap: 10px 14px; align-items: end; padding: .75rem .85rem; border: 1px solid rgba(231,187,126,.25); background: rgba(4,8,13,.65); }
+.zdr-setup > h2 { grid-column: 1 / -1; margin: 0; font-size: 1rem; color: #f4efe7; }
+.zdr-setting-block h3 { margin: 0 0 .42rem; color: #d6dbe1; font-size: .86rem; }
+.zdr-choice-grid { display: grid; gap: .5rem; }
+.zdr-choice-grid--characters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.zdr-choice-grid--levels { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.zdr-choice-grid button { min-height: 50px; padding: .42rem .58rem; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.04); color: #d6dbe1; text-align: left; cursor: pointer; }
+.zdr-choice-grid button b, .zdr-choice-grid button span { display: block; }
+.zdr-choice-grid button b { color: #f4efe7; font-size: 1rem; }
+.zdr-choice-grid button span { margin-top: .12rem; color: #aeb7c3; font-size: .75rem; }
+.zdr-choice-grid button.is-selected { border-color: #e6a24c; background: rgba(230,162,76,.17); box-shadow: inset 3px 0 #e6a24c; }
+.zdr-choice-grid button:disabled { cursor: not-allowed; opacity: .55; }
+.zdr-setup > .zdr-start { min-width: 190px; margin: 0; align-self: stretch; }
+.zdr-playfield { position: relative; min-height: 0; }
+.zdr-playfield .zdr-canvas { height: min(62dvh, 700px); min-height: 360px; }
+.zdr-game.is-active .zdr-playfield { min-height: 0; }
+.zdr-game.is-active .zdr-canvas { height: calc(100dvh - 116px); min-height: 420px; max-height: none; }
+.zdr-playfield .zdr-hud { top: 12px; left: 14px; right: 14px; gap: clamp(5px, 1.4vw, 18px); }
+.zdr-playfield .zdr-scene-title { top: 72px; }
+.zdr-playfield .zdr-load-state, .zdr-playfield .zdr-caught { inset: 0; }
+.zdr-run-label { min-width: 74px; }
+.zdr-crowd { margin-left: auto; }
+.zdr-phase-overlay { position: absolute; z-index: 6; inset: 0; display: grid; place-items: center; color: #f4d4ad; background: rgba(7,11,17,.72); font-weight: 900; font-size: 1.05rem; }
+.zdr-result-actions { justify-self: center; width: min(100%, 680px); padding: 1rem; border: 1px solid rgba(231,187,126,.25); background: rgba(4,8,13,.72); text-align: center; }
+.zdr-result-actions h2 { margin: 0; color: #f4efe7; font-size: 1.08rem; }
+.zdr-result-actions p { margin: .55rem 0 .8rem; color: #dcd4c8; }
+.zdr-result-actions > div { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.zdr-result-actions button { min-height: 50px; border: 1px solid rgba(234,166,78,.42); background: linear-gradient(180deg, #293341, #17202c); color: #fbf5ef; font-weight: 800; cursor: pointer; }
+.zdr-result-actions .zdr-start { min-width: 0; width: 100%; }
+
+@media (max-width: 850px) {
+  .zdr-setup { grid-template-columns: 1fr; align-items: stretch; }
+  .zdr-setup > .zdr-start { min-width: 0; width: 100%; }
+  .zdr-playfield .zdr-canvas { height: min(64dvh, 650px); }
+  .zdr-game.is-active .zdr-canvas { height: calc(100dvh - 114px); min-height: 360px; }
+}
+
+@media (max-width: 480px) {
+  .zdr-game { padding: 7px; }
+  .zdr-setup { gap: 8px; padding: .6rem; }
+  .zdr-choice-grid button { min-height: 52px; padding: .35rem .42rem; }
+  .zdr-choice-grid button b { font-size: .95rem; }
+  .zdr-choice-grid button span { font-size: .72rem; }
+  .zdr-playfield .zdr-canvas { height: min(54dvh, 500px); min-height: 300px; }
+  .zdr-game.is-active .zdr-canvas { height: calc(100dvh - 112px); min-height: 330px; }
+  .zdr-playfield .zdr-hud { top: 8px; left: 8px; right: 8px; gap: 4px; display: grid; grid-template-columns: auto auto 1fr 1fr; }
+  .zdr-playfield .zdr-hud > div { padding: 4px 6px; }
+  .zdr-playfield .zdr-hud strong { font-size: .92rem; }
+  .zdr-playfield .zdr-scene-title { top: 82px; }
+  .zdr-crowd { display: none; }
+  .zdr-result-actions > div { grid-template-columns: 1fr; }
+}
+
+@supports not (height: 100dvh) {
+  .zdr-game.is-active { min-height: calc(100svh - 52px); }
+  .zdr-game.is-active .zdr-canvas { height: calc(100svh - 116px); }
+}

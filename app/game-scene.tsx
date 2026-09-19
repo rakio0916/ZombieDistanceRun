@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { AnimationAction, Group, Mesh, Object3D } from "three";
-import { getHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
+import { getDifficultyHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
 import type { CharacterDefinition, CharacterId } from "./characters";
 
 type Phase = "ready" | "starting" | "running" | "saving" | "ended";
@@ -18,7 +18,6 @@ export function GameScene({
   onCharacterStatus,
   onTargetX,
   onJump,
-  onBoost,
 }: {
   game: GameState;
   seed: number;
@@ -27,19 +26,18 @@ export function GameScene({
   onCharacterStatus: (characterId: CharacterId, status: CharacterStatus) => void;
   onTargetX: (targetXmm: number) => void;
   onJump: () => void;
-  onBoost: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef(game);
   const seedRef = useRef(seed);
   const phaseRef = useRef(phase);
   const gestureRef = useRef<{ pointerId: number; startX: number; startY: number; originXmm: number; startedAt: number; moved: boolean } | null>(null);
-  const tapRef = useRef<{ at: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
     gameRef.current = game;
     seedRef.current = seed;
     phaseRef.current = phase;
+    if (phase !== "running") gestureRef.current = null;
   }, [game, seed, phase]);
 
   useEffect(() => {
@@ -249,21 +247,18 @@ export function GameScene({
       onPointerMove={(event) => {
         const gesture = gestureRef.current;
         if (!gesture || gesture.pointerId !== event.pointerId) return;
-        if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 8) { gesture.moved = true; tapRef.current = null; }
+        if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 8) gesture.moved = true;
         const travelPx = Math.max(120, Math.min(event.currentTarget.clientWidth, event.currentTarget.clientHeight) * 0.7);
         onTargetX(gesture.originXmm + ((event.clientX - gesture.startX) / travelPx) * 4_800);
       }}
       onPointerUp={(event) => {
         const gesture = gestureRef.current;
         gestureRef.current = null;
-        if (!gesture || gesture.pointerId !== event.pointerId || gesture.moved || performance.now() - gesture.startedAt > 220) { tapRef.current = null; return; }
-        const now = performance.now();
-        const prior = tapRef.current;
-        if (prior && now - prior.at <= 280 && Math.hypot(event.clientX - prior.x, event.clientY - prior.y) <= 32) { tapRef.current = null; onBoost(); }
-        else { tapRef.current = { at: now, x: event.clientX, y: event.clientY }; onJump(); }
+        if (!gesture || gesture.pointerId !== event.pointerId || gesture.moved || performance.now() - gesture.startedAt > 220) return;
+        onJump();
       }}
-      onPointerCancel={() => { gestureRef.current = null; tapRef.current = null; }}
-      onLostPointerCapture={() => { if (gestureRef.current) { gestureRef.current = null; tapRef.current = null; } }}
+      onPointerCancel={() => { gestureRef.current = null; }}
+      onLostPointerCapture={() => { if (gestureRef.current) gestureRef.current = null; }}
     />
   );
 }
@@ -447,9 +442,9 @@ function makeHazard(THREE: typeof import("three"), hazard: GeneratedHazard): Gro
   } else {
     const concrete = new THREE.MeshStandardMaterial({ color: 0x9c978d, roughness: 0.98 });
     const stripe = new THREE.MeshStandardMaterial({ color: 0xb85842, roughness: 0.92 });
-    const barrier = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.52, 0.5), concrete);
+    const barrier = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.52, 0.8), concrete);
     barrier.position.y = 0.28;
-    const marker = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.12, 0.515), stripe);
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.12, 0.8), stripe);
     marker.position.set(0, 0.33, 0);
     group.add(barrier, marker);
   }
@@ -465,7 +460,7 @@ function syncHazards(
   distanceMm: number,
   elapsed: number,
 ) {
-  const hazards = getHazardsInRange(seed, distanceMm - 3_000, distanceMm + 60_000);
+  const hazards = getDifficultyHazardsInRange(seed, distanceMm - 3_000, distanceMm + 60_000);
   const visibleIds = new Set(hazards.map((hazard) => hazard.id));
   for (const hazard of hazards) {
     let mesh = meshes.get(hazard.id);

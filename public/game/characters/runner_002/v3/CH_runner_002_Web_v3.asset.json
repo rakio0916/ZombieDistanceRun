@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0.0",
+  "character_id": "runner_002",
+  "release_id": "runner_002_web_v3",
+  "release_version": 3,
+  "release_status": "approved_for_public_site",
+  "source": {
+    "sha256": "c0c9fc507310965aaa936683361550a4c423ec9da5d94ccec8f87a75522a39aa"
+  },
+  "web_glb": {
+    "relative_path": "characters/runner_002/v3/CH_runner_002_Web_v3.glb",
+    "sha256": "09449d533245da2bccebad3b2dcd1b4a1f6cd8d6a693c5c3f62563c4291b0580",
+    "size_bytes": 2401428,
+    "media_type": "model/gltf-binary",
+    "triangle_count": 34327,
+    "material_count": 1
+  },
+  "coordinate_system": {
+    "unit": "meter",
+    "meters_per_unit": 1,
+    "up_axis": "+Y",
+    "forward_axis": "+Z",
+    "ground_offset_m": 0
+  },
+  "collider": {
+    "profile_id": "runner_standard_v1",
+    "half_width_mm": 450,
+    "half_length_mm": 500
+  },
+  "animations": [
+    {
+      "logical_name": "Idle",
+      "clip_name": "Web_Idle",
+      "loop": true,
+      "duration_seconds": 1.0
+    },
+    {
+      "logical_name": "Run",
+      "clip_name": "Run_03",
+      "loop": true,
+      "duration_seconds": 0.833333
+    },
+    {
+      "logical_name": "Jump",
+      "clip_name": "Web_Jump",
+      "loop": false,
+      "duration_seconds": 0.791667
+    },
+    {
+      "logical_name": "Stumble",
+      "clip_name": "Web_Stumble",
+      "loop": false,
+      "duration_seconds": 0.75
+    },
+    {
+      "logical_name": "Caught",
+      "clip_name": "Web_Caught",
+      "loop": false,
+      "duration_seconds": 1.0
+    }
+  ],
+  "compression": {
+    "mesh": "none",
+    "textures": "embedded_png_jpeg",
+    "decoder_version": "none"
+  },
+  "licensing": {
+    "commercial_web_use_confirmed": true,
+    "attribution_required": false
+  },
+  "appearance_approval": {
+    "approved": true,
+    "target_sha256": "09449d533245da2bccebad3b2dcd1b4a1f6cd8d6a693c5c3f62563c4291b0580"
+  },
+  "publication_approval": {
+    "approved": true,
+    "target_sha256": "09449d533245da2bccebad3b2dcd1b4a1f6cd8d6a693c5c3f62563c4291b0580",
+    "public_distribution": true,
+    "browser_cache_and_retrieval": true,
+    "gameplay_chase_and_caught_depiction": true,
+    "record_reference": "current-thread-runner002-v3-black-hair-sites-publish",
+    "confirmed_at": "2026-09-19T17:45:30+09:00"
+  }
+}

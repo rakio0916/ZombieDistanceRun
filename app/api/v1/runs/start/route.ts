@@ -1,17 +1,33 @@
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getD1 } from "@/db";
 import {
-  CATALOG_VERSION,
   challengeDateInTokyo,
-  CORE_VERSION,
+  DIFFICULTY_CATALOG_VERSION,
+  DIFFICULTY_CORE_VERSION,
+  DIFFICULTY_RULESET_IDS,
+  type Difficulty,
+  isDifficulty,
   MAX_TICKS,
-  RULESET_ID,
   seedForDate,
 } from "@/lib/game-core";
 
-export async function POST() {
+export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return json({ error: "AUTH_REQUIRED" }, 401);
+  if ((request.headers.get("content-type") ?? "").split(";")[0] !== "application/json") {
+    return json({ error: "CLIENT_UPDATE_REQUIRED" }, 409);
+  }
+  let body: unknown;
+  try { body = await request.json(); } catch { return json({ error: "INVALID_JSON" }, 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 2) {
+    return json({ error: "INVALID_DIFFICULTY" }, 422);
+  }
+  const requestBody = body as Record<string, unknown>;
+  if (requestBody.input_schema_version !== "4.0.0" || !isDifficulty(requestBody.difficulty)) {
+    return json({ error: "INVALID_DIFFICULTY" }, 422);
+  }
+  const difficulty: Difficulty = requestBody.difficulty;
+  const rulesetId = DIFFICULTY_RULESET_IDS[difficulty];
 
   const database = getD1();
   const now = Date.now();
@@ -67,7 +83,7 @@ export async function POST() {
     .prepare(
       "INSERT INTO runs (run_id, player_id, challenge_date, seed, ruleset_id, core_version, catalog_version, status, issued_at_ms, started_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?)",
     )
-    .bind(runId, player.player_id, challengeDate, seed, RULESET_ID, CORE_VERSION, CATALOG_VERSION, now, now)
+    .bind(runId, player.player_id, challengeDate, seed, rulesetId, DIFFICULTY_CORE_VERSION, DIFFICULTY_CATALOG_VERSION, now, now)
     .run();
 
   return json({
@@ -77,9 +93,11 @@ export async function POST() {
       seed,
       display_name: player.display_name,
       max_ticks: MAX_TICKS,
-      ruleset_id: RULESET_ID,
-      core_version: CORE_VERSION,
-      catalog_version: CATALOG_VERSION,
+      difficulty,
+      ruleset_id: rulesetId,
+      core_version: DIFFICULTY_CORE_VERSION,
+      catalog_version: DIFFICULTY_CATALOG_VERSION,
+      input_schema_version: "4.0.0",
     },
   });
 }

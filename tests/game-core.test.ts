@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   advanceGameState,
   advanceContinuousGameState,
+  advanceDifficultyGameState,
   createGameState,
+  getDifficultyHazardsInRange,
   getHazardsInRange,
   HAZARD_LOOKAHEAD_MM,
   SAFE_START_MM,
@@ -116,6 +118,29 @@ test("boost costs ten stamina once and lasts sixty ticks", () => {
   state = advanceContinuousGameState(state, 42, { targetXmm: 0, jump: false, boost: true });
   assert.equal(state.stamina, 90);
   assert.equal(state.boostCooldownUntilTick, 120);
+});
+
+test("difficulty changes only the forward speed", () => {
+  const input = { targetXmm: 0, jump: false };
+  const beginner = advanceDifficultyGameState(createGameState(), 42, input, "beginner");
+  const intermediate = advanceDifficultyGameState(createGameState(), 42, input, "intermediate");
+  const advanced = advanceDifficultyGameState(createGameState(), 42, input, "advanced");
+  assert.equal(beginner.distanceMm, 184);
+  assert.equal(intermediate.distanceMm, 216);
+  assert.equal(advanced.distanceMm, 260);
+  assert.equal(beginner.stamina, 100);
+  assert.equal(intermediate.stamina, 100);
+  assert.equal(advanced.stamina, 100);
+});
+
+test("difficulty catalog uses the enlarged low obstacle footprint", () => {
+  const found = findHazard("LOW");
+  const legacy = getHazardsInRange(found.seed, SAFE_START_MM, 300_000)
+    .find((item) => item.id === found.hazard.id);
+  const difficulty = getDifficultyHazardsInRange(found.seed, SAFE_START_MM, 300_000)
+    .find((item) => item.id === found.hazard.id);
+  assert.equal(legacy?.halfLengthMm, 550);
+  assert.equal(difficulty?.halfLengthMm, 400);
 });
 
 function stateAtHazardEntry(state: GameState, hazard: GeneratedHazard, tick: number): GameState {
