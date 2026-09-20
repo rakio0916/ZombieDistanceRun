@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { AnimationAction, Group, Mesh, Object3D } from "three";
 import { getDifficultyHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
+import { advanceLateralDrag, beginLateralDrag, type LateralDrag } from "@/lib/lateral-input";
 import type { CharacterDefinition, CharacterId } from "./characters";
 import { animateZombie, makeZombie, setZombieOpacity } from "./zombie-model";
 
@@ -18,6 +19,7 @@ export function GameScene({
   character,
   onCharacterStatus,
   onTargetX,
+  onStopHorizontal,
   onJump,
 }: {
   game: GameState;
@@ -26,28 +28,48 @@ export function GameScene({
   character: CharacterDefinition;
   onCharacterStatus: (characterId: CharacterId, status: CharacterStatus) => void;
   onTargetX: (targetXmm: number) => void;
+  onStopHorizontal: () => void;
   onJump: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef(game);
   const seedRef = useRef(seed);
   const phaseRef = useRef(phase);
-  const gestureRef = useRef<{ pointerId: number; startX: number; startY: number; originXmm: number; startedAt: number; moved: boolean } | null>(null);
+  const gestureRef = useRef<(LateralDrag & { canvasWidth: number; canvasHeight: number }) | null>(null);
+
+  const stopGesture = useCallback((pointerId?: number) => {
+    const gesture = gestureRef.current;
+    if (!gesture || (pointerId !== undefined && gesture.pointerId !== pointerId)) return false;
+    gestureRef.current = null;
+    const canvas = canvasRef.current;
+    if (canvas?.hasPointerCapture(gesture.pointerId)) canvas.releasePointerCapture(gesture.pointerId);
+    onStopHorizontal();
+    return true;
+  }, [onStopHorizontal]);
 
   useEffect(() => {
-    const clearGesture = () => { gestureRef.current = null; };
-    const onVisibilityChange = () => { if (document.visibilityState !== "visible") clearGesture(); };
-    window.addEventListener("blur", clearGesture);
-    window.addEventListener("resize", clearGesture);
-    window.addEventListener("orientationchange", clearGesture);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      window.removeEventListener("blur", clearGesture);
-      window.removeEventListener("resize", clearGesture);
-      window.removeEventListener("orientationchange", clearGesture);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+    const onVisibilityChange = () => { if (document.visibilityState !== "visible") stopGesture(); };
+    const onResize = () => {
+      const gesture = gestureRef.current;
+      const canvas = canvasRef.current;
+      if (!gesture || !canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      if (Math.round(rect.width) !== gesture.canvasWidth || Math.round(rect.height) !== gesture.canvasHeight) stopGesture();
     };
-  }, []);
+    window.addEventListener("blur", stopGesture);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", stopGesture);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const resizeObserver = new ResizeObserver(onResize);
+    if (canvasRef.current) resizeObserver.observe(canvasRef.current);
+    return () => {
+      window.removeEventListener("blur", stopGesture);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", stopGesture);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      resizeObserver.disconnect();
+    };
+  }, [stopGesture]);
 
   useEffect(() => {
     gameRef.current = game;
@@ -232,12 +254,12 @@ export function GameScene({
         playerRoot.rotation.z += ((stumbling ? -0.22 : (laneX - playerRoot.position.x) * -0.08) - playerRoot.rotation.z) * 0.2;
 
         const portrait = camera.aspect < 0.85;
-        const followRatio = portrait ? 0.56 : 0.34;
+        const followRatio = portrait ? 0.18 : 0.12;
         const followAlpha = 1 - Math.exp(-delta / 0.16);
         camera.position.x += (playerRoot.position.x * followRatio - camera.position.x) * followAlpha;
         camera.position.y += ((portrait ? 2.78 : 2.58) - camera.position.y) * followAlpha;
         camera.position.z += ((portrait ? 6.15 : 4.7) - camera.position.z) * followAlpha;
-        let cameraLookX = playerRoot.position.x * (portrait ? 0.2 : 0.1);
+        let cameraLookX = playerRoot.position.x * (portrait ? 0.08 : 0.06);
         camera.lookAt(cameraLookX, 1.12, -10);
         camera.updateMatrixWorld(true);
         if (playerEnvelope) {
@@ -277,24 +299,33 @@ export function GameScene({
       aria-label="人物3Dが荒廃した市街地で前方ゾンビの隙間を走り抜けるゲーム画面"
       onPointerDown={(event) => {
         if (phaseRef.current !== "running" || gestureRef.current) return;
-        gestureRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originXmm: gameRef.current.xMm, startedAt: performance.now(), moved: false };
+        onStopHorizontal();
+        const rect = event.currentTarget.getBoundingClientRect();
+        gestureRef.current = {
+          ...beginLateralDrag(event.pointerId, event.clientX, event.clientY, gameRef.current.xMm, performance.now()),
+          canvasWidth: Math.round(rect.width),
+          canvasHeight: Math.round(rect.height),
+        };
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
         const gesture = gestureRef.current;
         if (!gesture || gesture.pointerId !== event.pointerId) return;
-        if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 8) gesture.moved = true;
         const travelPx = Math.max(120, Math.min(event.currentTarget.clientWidth, event.currentTarget.clientHeight) * 0.7);
-        onTargetX(gesture.originXmm + ((event.clientX - gesture.startX) / travelPx) * 4_800);
+        const result = advanceLateralDrag(gesture, event.clientX, event.clientY, travelPx, 2_400);
+        gestureRef.current = { ...result.drag, canvasWidth: gesture.canvasWidth, canvasHeight: gesture.canvasHeight };
+        if (result.targetXmm !== null) onTargetX(result.targetXmm);
       }}
       onPointerUp={(event) => {
         const gesture = gestureRef.current;
-        gestureRef.current = null;
-        if (!gesture || gesture.pointerId !== event.pointerId || gesture.moved || performance.now() - gesture.startedAt > 220) return;
+        if (!gesture || gesture.pointerId !== event.pointerId) return;
+        const isTap = !gesture.moved && performance.now() - gesture.startedAt <= 220;
+        stopGesture(event.pointerId);
+        if (!isTap) return;
         onJump();
       }}
-      onPointerCancel={() => { gestureRef.current = null; }}
-      onLostPointerCapture={() => { if (gestureRef.current) gestureRef.current = null; }}
+      onPointerCancel={(event) => { stopGesture(event.pointerId); }}
+      onLostPointerCapture={(event) => { stopGesture(event.pointerId); }}
     />
   );
 }
@@ -307,7 +338,7 @@ function keepPlayerEnvelopeOnScreen(
   canvasWidth: number,
   initialLookX: number,
 ): number {
-  const marginNdc = Math.min(0.22, 32 / Math.max(1, canvasWidth));
+  const marginNdc = Math.min(0.22, 16 / Math.max(1, canvasWidth));
   const limit = 1 - marginNdc;
   let lookX = initialLookX;
   playerRoot.updateMatrixWorld(true);

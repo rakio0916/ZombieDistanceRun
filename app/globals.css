@@ -140,6 +140,107 @@ body {
 * { box-sizing: border-box; }
 button, a { font: inherit; }
 
+/* Video title entry */
+.zdr-title-screen {
+  --zdr-title-poster: none;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 480px;
+  overflow: hidden;
+  background: #080b0f;
+}
+.zdr-title-screen::before {
+  content: "";
+  position: absolute;
+  z-index: -2;
+  inset: -28px;
+  background-image: linear-gradient(rgba(3,6,10,.28), rgba(3,6,10,.58)), var(--zdr-title-poster);
+  background-position: center;
+  background-size: cover;
+  filter: blur(22px) saturate(.78);
+  transform: scale(1.08);
+}
+.zdr-title-screen::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(4,7,11,.05) 0%, rgba(4,7,11,.02) 33%, rgba(4,7,11,.22) 62%, rgba(4,7,11,.52) 100%);
+}
+.zdr-title-video,
+.zdr-title-poster {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.zdr-title-video {
+  display: block;
+  object-fit: contain;
+  filter: saturate(.92) contrast(1.04);
+}
+.zdr-title-poster {
+  background-image: var(--zdr-title-poster);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+.zdr-title-enter {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  border: 0;
+  background: transparent;
+  color: #fffaf1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.zdr-title-cta {
+  display: grid;
+  gap: .55rem;
+  min-width: min(82vw, 330px);
+  padding: 1.05rem 1.5rem .9rem;
+  border: 1px solid rgba(239,171,72,.88);
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(12,17,23,.76), rgba(5,8,12,.88));
+  box-shadow: 0 18px 45px rgba(0,0,0,.46), inset 0 0 0 1px rgba(255,255,255,.08);
+  text-align: center;
+  text-shadow: 0 3px 14px #000;
+  backdrop-filter: blur(6px);
+  transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+.zdr-title-cta strong {
+  font-size: clamp(1.45rem, 5vw, 2.25rem);
+  line-height: 1.15;
+  letter-spacing: .06em;
+}
+.zdr-title-cta small {
+  color: #ead9c0;
+  font-size: clamp(.85rem, 2.4vw, 1rem);
+  line-height: 1.35;
+  letter-spacing: .04em;
+}
+.zdr-title-enter:hover .zdr-title-cta,
+.zdr-title-enter:active .zdr-title-cta {
+  border-color: #ffc66f;
+  background: linear-gradient(180deg, rgba(23,29,36,.84), rgba(8,11,15,.94));
+  transform: translateY(-2px);
+}
+.zdr-title-enter:focus-visible { outline: 0; }
+.zdr-title-enter:focus-visible .zdr-title-cta {
+  outline: 3px solid #fff5dd;
+  outline-offset: 5px;
+}
+
 .zdr-topbar { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px clamp(18px, 4vw, 56px); background: #111729; border-bottom: 1px solid rgba(255,255,255,.12); font-size: .88rem; }
 .zdr-logo { color: #f7c58c; text-decoration: none; font-weight: 900; letter-spacing: .13em; }.zdr-logo span { color: #7f8bff; }.zdr-signin { color: #161725; background: #f7c58c; padding: .55rem .85rem; border-radius: 999px; text-decoration: none; font-weight: 700; }
 .zdr-shell { min-height: calc(100vh - 58px); display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, .7fr); }.zdr-game { min-height: 620px; position: relative; display: grid; grid-template-rows: auto 1fr auto auto; padding: clamp(14px, 2vw, 26px); overflow: hidden; background: #171a2d; }
@@ -265,6 +366,12 @@ button, a { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .zdr-caught { animation: none; }
   .zdr-stamina b { transition: none; }
+  .zdr-title-cta { transition: none; }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .zdr-title-screen { min-height: 320px; }
+  .zdr-title-cta { min-width: min(66vw, 320px); padding: .75rem 1.2rem .65rem; }
 }
 
 /* Gesture-run v3: selection is reachable before the play surface on phones. */

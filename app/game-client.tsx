@@ -68,6 +68,10 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => {
+    const timeout = window.setTimeout(() => setupHeadingRef.current?.focus({ preventScroll: true }), 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
+  useEffect(() => {
     const timeout = window.setTimeout(() => {
       const savedCharacter = window.localStorage.getItem("zdr-selected-character");
       const savedDifficulty = window.localStorage.getItem("zdr-selected-difficulty");
@@ -151,6 +155,11 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const setTargetX = useCallback((targetXmm: number) => {
     if (phaseRef.current !== "running") return;
     targetXRef.current = Math.max(-ROAD_HALF_WIDTH_MM, Math.min(ROAD_HALF_WIDTH_MM, Math.round(targetXmm / 10) * 10));
+  }, []);
+
+  const stopHorizontalMovement = useCallback(() => {
+    if (phaseRef.current !== "running") return;
+    targetXRef.current = stateRef.current.xMm;
   }, []);
 
   const start = useCallback(async () => {
@@ -312,7 +321,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <div className="zdr-stamina"><span>スタミナ {game.stamina}</span><i><b style={{ width: `${game.stamina}%` }} /></i></div>
             <div className="zdr-crowd"><span>群れ</span><strong>{crowdCount}体</strong></div>
           </div>
-          <GameScene game={game} seed={seed} phase={phase} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onTargetX={setTargetX} onJump={queueJump} />
+          <GameScene game={game} seed={seed} phase={phase} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onTargetX={setTargetX} onStopHorizontal={stopHorizontalMovement} onJump={queueJump} />
           {characterStatus !== "ready" && <div className="zdr-load-state" role="status">{characterStatus === "loading" ? `${selectedCharacter.label}の人物3Dと街を読み込み中…` : `${selectedCharacter.label}の人物3Dを読み込めませんでした。別の人物を選ぶか、再読み込みしてください。`}</div>}
           {game.terminalReason && <div className="zdr-caught" aria-hidden="true">{game.terminalReason === "TIME_LIMIT" ? "30:00 完走" : "スタミナ切れ"}</div>}
           {phase === "starting" && <div className="zdr-phase-overlay" role="status">{DIFFICULTIES[runDifficulty].label}で開始しています…</div>}
