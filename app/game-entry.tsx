@@ -45,13 +45,11 @@ export function GameEntry({
 
 function VideoTitleScreen({ onEnter }: { onEnter: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const enterButtonRef = useRef<HTMLButtonElement>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const showPoster = reduceMotion || videoFailed;
 
   useEffect(() => {
-    enterButtonRef.current?.focus({ preventScroll: true });
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updateMotion = () => setReduceMotion(media.matches);
     const onKeyDown = (event: KeyboardEvent) => {
@@ -110,10 +108,9 @@ function VideoTitleScreen({ onEnter }: { onEnter: () => void }) {
           onError={() => setVideoFailed(true)}
         />
       )}
-      <button ref={enterButtonRef} className="zdr-title-enter" type="button" onClick={onEnter} aria-label="ゲームスタート">
-        <span className="zdr-title-cta">
-          <strong>ゲームスタート</strong>
-          <small>タップ / Enterで進む</small>
+      <button className="zdr-title-enter" type="button" onClick={onEnter} aria-label="ゲームスタート">
+        <span className="zdr-title-video-frame">
+          <strong className="zdr-title-cta">ゲームスタート</strong>
         </span>
       </button>
     </main>

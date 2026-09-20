@@ -145,10 +145,10 @@ button, a { font: inherit; }
   --zdr-title-poster: none;
   position: relative;
   isolation: isolate;
+  container-type: size;
   width: 100%;
   height: 100vh;
   height: 100dvh;
-  min-height: 480px;
   overflow: hidden;
   background: #080b0f;
 }
@@ -194,51 +194,49 @@ button, a { font: inherit; }
   position: absolute;
   z-index: 2;
   inset: 0;
-  display: grid;
-  place-items: center;
   width: 100%;
-  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  height: 100%;
+  padding: 0;
   border: 0;
   background: transparent;
   color: #fffaf1;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
+.zdr-title-video-frame {
+  /* Match the centered 9:16 contain rectangle, including its letterboxing. */
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(100cqw, 56.25cqh);
+  height: min(100cqh, 177.777778cqw);
+  transform: translate(-50%, -50%);
+  container-type: inline-size;
+  pointer-events: none;
+}
 .zdr-title-cta {
-  display: grid;
-  gap: .55rem;
-  min-width: min(82vw, 330px);
-  padding: 1.05rem 1.5rem .9rem;
-  border: 1px solid rgba(239,171,72,.88);
-  border-radius: 4px;
-  background: linear-gradient(180deg, rgba(12,17,23,.76), rgba(5,8,12,.88));
-  box-shadow: 0 18px 45px rgba(0,0,0,.46), inset 0 0 0 1px rgba(255,255,255,.08);
+  position: absolute;
+  left: 50%;
+  top: 17%;
+  transform: translate(-50%, -50%);
+  width: max-content;
+  max-width: calc(100% - 16px);
   text-align: center;
-  text-shadow: 0 3px 14px #000;
-  backdrop-filter: blur(6px);
-  transition: transform .16s ease, border-color .16s ease, background .16s ease;
-}
-.zdr-title-cta strong {
-  font-size: clamp(1.45rem, 5vw, 2.25rem);
-  line-height: 1.15;
+  text-shadow: 0 2px 5px rgba(0,0,0,.85);
+  font-size: clamp(1rem, 6.8cqw, 2rem);
+  line-height: 1.2;
   letter-spacing: .06em;
-}
-.zdr-title-cta small {
-  color: #ead9c0;
-  font-size: clamp(.85rem, 2.4vw, 1rem);
-  line-height: 1.35;
-  letter-spacing: .04em;
+  transition: color .16s ease;
 }
 .zdr-title-enter:hover .zdr-title-cta,
 .zdr-title-enter:active .zdr-title-cta {
-  border-color: #ffc66f;
-  background: linear-gradient(180deg, rgba(23,29,36,.84), rgba(8,11,15,.94));
-  transform: translateY(-2px);
+  color: #ffe2a8;
 }
 .zdr-title-enter:focus-visible { outline: 0; }
 .zdr-title-enter:focus-visible .zdr-title-cta {
-  outline: 3px solid #fff5dd;
-  outline-offset: 5px;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: .2em;
 }
 
 .zdr-topbar { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px clamp(18px, 4vw, 56px); background: #111729; border-bottom: 1px solid rgba(255,255,255,.12); font-size: .88rem; }
@@ -367,11 +365,6 @@ button, a { font: inherit; }
   .zdr-caught { animation: none; }
   .zdr-stamina b { transition: none; }
   .zdr-title-cta { transition: none; }
-}
-
-@media (max-height: 560px) and (orientation: landscape) {
-  .zdr-title-screen { min-height: 320px; }
-  .zdr-title-cta { min-width: min(66vw, 320px); padding: .75rem 1.2rem .65rem; }
 }
 
 /* Gesture-run v3: selection is reachable before the play surface on phones. */
