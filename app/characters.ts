@@ -21,7 +21,7 @@ export const CHARACTERS: Record<CharacterId, CharacterDefinition> = {
   runner_002: {
     id: "runner_002",
     label: "女性",
-    releaseLabel: "女性・黒髪・修復候補v6・走行アニメーション復元版",
+    releaseLabel: "女性・黒髪・公開版v6・走行アニメーション復元版",
     url: "/game/characters/runner_002/v6/CH_runner_002_Web_v6.glb",
     available: true,
   },
