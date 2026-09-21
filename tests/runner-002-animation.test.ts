@@ -23,6 +23,8 @@ const glb = readFileSync(assetUrl);
 const manifest = JSON.parse(readFileSync(manifestUrl, "utf8")) as {
   release_status: string;
   web_glb: { sha256: string; size_bytes: number };
+  appearance_approval: { approved: boolean; target_sha256: string };
+  publication_approval: { approved: boolean; target_sha256: string; public_distribution: boolean; browser_cache_and_retrieval: boolean; gameplay_chase_and_caught_depiction: boolean };
 };
 assert.equal(glb.toString("ascii", 0, 4), "glTF");
 const jsonLength = glb.readUInt32LE(12);
@@ -66,10 +68,17 @@ function movingNodes(clipName: string): string[] {
   });
 }
 
-test("runner_002 v6 is a new draft with an exact asset hash", () => {
-  assert.equal(manifest.release_status, "draft");
+test("runner_002 v6 has exact-hash approval for public use", () => {
+  assert.equal(manifest.release_status, "approved_for_public_site");
   assert.equal(manifest.web_glb.size_bytes, glb.length);
   assert.equal(manifest.web_glb.sha256, createHash("sha256").update(glb).digest("hex"));
+  assert.equal(manifest.appearance_approval.approved, true);
+  assert.equal(manifest.appearance_approval.target_sha256, manifest.web_glb.sha256);
+  assert.equal(manifest.publication_approval.approved, true);
+  assert.equal(manifest.publication_approval.target_sha256, manifest.web_glb.sha256);
+  assert.equal(manifest.publication_approval.public_distribution, true);
+  assert.equal(manifest.publication_approval.browser_cache_and_retrieval, true);
+  assert.equal(manifest.publication_approval.gameplay_chase_and_caught_depiction, true);
   assert.deepEqual(new Set(document.animations.map((clip) => clip.name)),
     new Set(["Web_Idle", "Run_03", "Web_Jump", "Web_Stumble", "Web_Caught"]));
 });

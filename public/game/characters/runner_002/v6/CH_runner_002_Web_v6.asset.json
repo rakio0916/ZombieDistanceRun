@@ -3,7 +3,7 @@
   "character_id": "runner_002",
   "release_id": "runner_002_web_v6",
   "release_version": 6,
-  "release_status": "draft",
+  "release_status": "approved_for_public_site",
   "source": {
     "sha256": "313c310e2476071f1523de88f0e0e34e6e0dba359d4f45395f80ca44082d9020"
   },
@@ -69,14 +69,16 @@
     "attribution_required": false
   },
   "appearance_approval": {
-    "approved": false,
+    "approved": true,
     "target_sha256": "6f7074694b91993498a15179aceb36c3b0f5418866df0f66828a0d06f592c125"
   },
   "publication_approval": {
-    "approved": false,
+    "approved": true,
     "target_sha256": "6f7074694b91993498a15179aceb36c3b0f5418866df0f66828a0d06f592c125",
-    "public_distribution": false,
-    "browser_cache_and_retrieval": false,
-    "gameplay_chase_and_caught_depiction": false
+    "public_distribution": true,
+    "browser_cache_and_retrieval": true,
+    "gameplay_chase_and_caught_depiction": true,
+    "record_reference": "user_site_publish_request_2026-09-22_v6",
+    "confirmed_at": "2026-09-22T08:33:55+09:00"
   }
 }
