@@ -1,4 +1,6 @@
 export const LATERAL_DRAG_DEAD_ZONE_PX = 8;
+export const JUMP_TAP_MAX_MOVEMENT_PX = 20;
+export const JUMP_TAP_MAX_DURATION_MS = 300;
 
 export type LateralDrag = {
   pointerId: number;
@@ -14,6 +16,13 @@ export function beginLateralDrag(pointerId: number, clientX: number, clientY: nu
   return { pointerId, startX: clientX, startY: clientY, lastX: clientX, rawTargetXmm: currentXmm, startedAt, moved: false };
 }
 
+export function isJumpTap(drag: LateralDrag, clientX: number, clientY: number, endedAt: number): boolean {
+  return !drag.moved
+    && endedAt >= drag.startedAt
+    && endedAt - drag.startedAt <= JUMP_TAP_MAX_DURATION_MS
+    && Math.hypot(clientX - drag.startX, clientY - drag.startY) <= JUMP_TAP_MAX_MOVEMENT_PX;
+}
+
 export function advanceLateralDrag(
   previous: LateralDrag,
   clientX: number,
@@ -25,13 +34,15 @@ export function advanceLateralDrag(
   if (!drag.moved) {
     const deltaX = clientX - drag.startX;
     const deltaY = clientY - drag.startY;
-    const distance = Math.hypot(deltaX, deltaY);
-    if (distance <= LATERAL_DRAG_DEAD_ZONE_PX) return { drag, targetXmm: null };
-    // The first 8px only decides tap versus drag. Do not turn it into a lateral jump.
+    // A small vertical wobble should not turn a tap into horizontal movement.
+    if (Math.abs(deltaX) <= LATERAL_DRAG_DEAD_ZONE_PX || Math.abs(deltaX) < Math.abs(deltaY)) {
+      return { drag, targetXmm: null };
+    }
+    // The first 8px only decides tap versus horizontal drag.
     drag = {
       ...drag,
       moved: true,
-      lastX: drag.startX + (deltaX * LATERAL_DRAG_DEAD_ZONE_PX) / distance,
+      lastX: drag.startX + Math.sign(deltaX) * LATERAL_DRAG_DEAD_ZONE_PX,
     };
   }
 

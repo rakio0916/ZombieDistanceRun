@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { AnimationAction, AnimationMixer, Group, Mesh, Object3D } from "three";
 import { getWalkingHazardsInRange, WALKING_ZOMBIE_LOOKAHEAD_MM, type GameState, type GeneratedHazard } from "@/lib/game-core";
-import { advanceLateralDrag, beginLateralDrag, type LateralDrag } from "@/lib/lateral-input";
+import { advanceLateralDrag, beginLateralDrag, isJumpTap, type LateralDrag } from "@/lib/lateral-input";
 import {
+  blendCharacterWeights,
   getJumpPhase,
   jumpClipTime,
   jumpRootHeight,
@@ -257,32 +258,39 @@ export function GameScene({
       document.addEventListener("visibilitychange", resetFrameTimestamp);
 
       let activeJumpStartTick = -1;
+      let fadeFromWeights: number[] = [];
+      let fadeTargetIndex = 0;
+      let fadeStartedAt = 0;
+      let fadeDuration = 0;
       const changeAnimation = (name: string, jumpStartTick: number) => {
         if (name === activeClip && (name !== "Web_Jump" || jumpStartTick === activeJumpStartTick)) return;
         const next = actions.get(name);
         if (!next) return;
         if (name === "Web_Jump" && next === activeAction) {
-          next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
-          initializedActions.add(name);
           next.paused = true;
           next.time = 0;
           activeJumpStartTick = jumpStartTick;
           return;
         }
         const fade = name === "Web_Caught" ? 0.15 : name === "Web_Stumble" ? 0.08 : 0.1;
-        if (activeAction && activeAction !== next) activeAction.fadeOut(fade);
+        const from = REQUIRED_CLIPS.map((clip) => initializedActions.has(clip) ? actions.get(clip)?.getEffectiveWeight() ?? 0 : 0);
+        const hasPose = from.some((weight) => weight > 0);
         if (name === "Run_03" && initializedActions.has(name)) {
           next.enabled = true;
           next.paused = false;
-          next.setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play();
+          next.setEffectiveTimeScale(1).play();
         } else {
-          next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play();
+          next.reset().setEffectiveTimeScale(1).play();
           initializedActions.add(name);
         }
         if (name === "Web_Jump") next.paused = true;
         activeAction = next;
         activeClip = name;
         activeJumpStartTick = name === "Web_Jump" ? jumpStartTick : -1;
+        fadeFromWeights = from;
+        fadeTargetIndex = REQUIRED_CLIPS.indexOf(name as (typeof REQUIRED_CLIPS)[number]);
+        fadeStartedAt = visibleElapsed;
+        fadeDuration = hasPose ? fade : 0;
       };
 
       const draw = (timestamp = performance.now()) => {
@@ -318,10 +326,22 @@ export function GameScene({
           jumpStartTick: current.jumpStartTick,
           running: phaseRef.current === "running",
         });
+        if (activeClip === "Web_Jump" && desiredClip !== "Web_Jump" && (jumpPhase === null || jumpPhase >= 24)) {
+          const departingJump = actions.get("Web_Jump");
+          if (departingJump) departingJump.time = departingJump.getClip().duration;
+        }
         changeAnimation(desiredClip, current.jumpStartTick);
         if (desiredClip === "Web_Jump" && activeAction) {
           activeAction.paused = true;
           activeAction.time = jumpClipTime(activeAction.getClip().duration, jumpPhase);
+        }
+        if (fadeFromWeights.length) {
+          const progress = fadeDuration === 0 ? 1 : (visibleElapsed - fadeStartedAt) / fadeDuration;
+          const weights = blendCharacterWeights(fadeFromWeights, fadeTargetIndex, progress);
+          REQUIRED_CLIPS.forEach((clip, index) => {
+            const action = actions.get(clip);
+            if (action && initializedActions.has(clip)) action.setEffectiveWeight(weights[index]);
+          });
         }
         mixer?.update(animationDelta);
 
@@ -409,7 +429,7 @@ export function GameScene({
       onPointerUp={(event) => {
         const gesture = gestureRef.current;
         if (!gesture || gesture.pointerId !== event.pointerId) return;
-        const isTap = !gesture.moved && performance.now() - gesture.startedAt <= 220;
+        const isTap = isJumpTap(gesture, event.clientX, event.clientY, performance.now());
         stopGesture(event.pointerId);
         if (!isTap) return;
         onJump();

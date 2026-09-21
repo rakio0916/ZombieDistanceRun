@@ -44,6 +44,14 @@ export function jumpRootHeight(phase: number | null, heightMeters = 0.92): numbe
   return Math.sin((phase / JUMP_DURATION_TICKS) * Math.PI) * heightMeters;
 }
 
+export function blendCharacterWeights(from: readonly number[], targetIndex: number, progress: number): number[] {
+  const source = from.map((weight) => Number.isFinite(weight) ? Math.max(0, weight) : 0);
+  const total = source.reduce((sum, weight) => sum + weight, 0);
+  if (total === 0) return source.map((_, index) => index === targetIndex ? 1 : 0);
+  const alpha = Math.max(0, Math.min(1, progress));
+  return source.map((weight, index) => (weight / total) * (1 - alpha) + (index === targetIndex ? alpha : 0));
+}
+
 export function terminalLandingHeight(entryHeight: number, elapsedSeconds: number): number {
   if (entryHeight <= 0) return 0;
   const progress = Math.max(0, Math.min(1, elapsedSeconds / TERMINAL_LANDING_SECONDS));

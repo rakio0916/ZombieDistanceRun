@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  blendCharacterWeights,
   getJumpPhase,
   isJumpPoseActive,
   jumpClipTime,
@@ -48,4 +49,14 @@ test("visible animation time includes 15fps deltas and excludes hidden gaps", ()
   assert.equal(visibleFrameDelta(1_000, 8_000, false), 0);
   assert.equal(visibleFrameDelta(null, 8_000, true), 0);
   assert.equal(visibleFrameDelta(1_000, 1_500, true), 0.5);
+});
+
+test("interrupted character fades keep total pose weight and current contribution", () => {
+  const first = blendCharacterWeights([1, 0, 0], 1, 0.4);
+  assert.deepEqual(first, [0.6, 0.4, 0]);
+  const interrupted = blendCharacterWeights(first, 2, 0);
+  assert.deepEqual(interrupted, first);
+  const mid = blendCharacterWeights(first, 2, 0.5);
+  assert.ok(Math.abs(mid.reduce((sum, weight) => sum + weight, 0) - 1) < 1e-10);
+  assert.deepEqual(blendCharacterWeights(first, 2, 1), [0, 0, 1]);
 });
