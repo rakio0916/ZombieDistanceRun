@@ -50,6 +50,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const [alias, setAlias] = useState<string | null>(null);
   const [seed, setSeed] = useState(() => seedForDate(challengeDateInTokyo()));
   const [characterStatus, setCharacterStatus] = useState<CharacterStatus>("loading");
+  const [zombieStatus, setZombieStatus] = useState<CharacterStatus>("loading");
   const [selectedCharacterId, setSelectedCharacterId] = useState<CharacterId>("runner_001");
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>("beginner");
   const [runDifficulty, setRunDifficulty] = useState<Difficulty>("beginner");
@@ -170,6 +171,11 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
       setNotice("人物3Dを読み込めないため開始できません。通信を確認して再読み込みしてください。");
       return;
     }
+    if (zombieStatus !== "ready") {
+      setSetupOpen(true);
+      setNotice("ゾンビ3Dを読み込めないため開始できません。通信を確認して再読み込みしてください。");
+      return;
+    }
     const difficulty = selectedDifficulty;
     const characterId = selectedCharacterId;
     runDifficultyRef.current = difficulty;
@@ -241,7 +247,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
       setGame(next);
       if (next.terminalReason) void finish(next);
     }, 1000 / 30);
-  }, [characterStatus, finish, selectedCharacterId, selectedDifficulty, signedIn]);
+  }, [characterStatus, zombieStatus, finish, selectedCharacterId, selectedDifficulty, signedIn]);
 
   const selectCharacter = useCallback((characterId: CharacterId) => {
     if (!setupOpen || (phaseRef.current !== "ready" && phaseRef.current !== "ended")) return;
@@ -306,8 +312,8 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
                 ))}
               </div>
             </div>
-            <button className="zdr-start" type="button" onClick={() => void start()} disabled={characterStatus !== "ready"}>
-              {characterStatus === "loading" ? "読み込み中" : characterStatus === "error" ? "読込エラー" : signedIn ? "ランク戦を開始" : "練習を開始"}
+            <button className="zdr-start" type="button" onClick={() => void start()} disabled={characterStatus !== "ready" || zombieStatus !== "ready"}>
+              {characterStatus === "loading" || zombieStatus === "loading" ? "読み込み中" : characterStatus === "error" || zombieStatus === "error" ? "読込エラー" : signedIn ? "ランク戦を開始" : "練習を開始"}
             </button>
           </section>
         )}
@@ -319,8 +325,8 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <div><span>距離</span><strong>{formatMeters(game.distanceMm)}m</strong></div>
             <div className="zdr-stamina"><span>スタミナ {game.stamina}</span><i><b style={{ width: `${game.stamina}%` }} /></i></div>
           </div>
-          <GameScene game={game} seed={seed} phase={phase} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onTargetX={setTargetX} onStopHorizontal={stopHorizontalMovement} onJump={queueJump} />
-          {characterStatus !== "ready" && <div className="zdr-load-state" role="status">{characterStatus === "loading" ? `${selectedCharacter.label}の人物3Dと街を読み込み中…` : `${selectedCharacter.label}の人物3Dを読み込めませんでした。別の人物を選ぶか、再読み込みしてください。`}</div>}
+          <GameScene game={game} seed={seed} phase={phase} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onZombieStatus={setZombieStatus} onTargetX={setTargetX} onStopHorizontal={stopHorizontalMovement} onJump={queueJump} />
+          {(characterStatus !== "ready" || zombieStatus !== "ready") && <div className="zdr-load-state" role="status">{characterStatus === "error" || zombieStatus === "error" ? "必要な3Dモデルを読み込めませんでした。通信を確認して再読み込みしてください。" : "人物3D、ゾンビ3Dと街を読み込み中…"}</div>}
           {game.terminalReason && <div className="zdr-caught" aria-hidden="true">{game.terminalReason === "TIME_LIMIT" ? "30:00 完走" : "スタミナ切れ"}</div>}
           {phase === "starting" && <div className="zdr-phase-overlay" role="status">{DIFFICULTIES[runDifficulty].label}で開始しています…</div>}
         </div>

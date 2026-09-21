@@ -8,6 +8,7 @@ import {
   createGameState,
   difficultyConfigForRuleset,
   getDifficultyHazardsInRange,
+  getWalkingHazardsInRange,
   getHazardsInRange,
   getPreviousDifficultyHazardsInRange,
   HAZARD_LOOKAHEAD_MM,
@@ -137,9 +138,10 @@ test("difficulty changes only the forward speed", () => {
 });
 
 test("older difficulty rulesets keep their original speed percentages", () => {
-  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v6"), { difficulty: "beginner", speedPercent: 100, generation: "current" });
-  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v6"), { difficulty: "intermediate", speedPercent: 200, generation: "current" });
-  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v6"), { difficulty: "advanced", speedPercent: 500, generation: "current" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v7"), { difficulty: "beginner", speedPercent: 100, generation: "current" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v6"), { difficulty: "beginner", speedPercent: 100, generation: "v6" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v6"), { difficulty: "intermediate", speedPercent: 200, generation: "v6" });
+  assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v6"), { difficulty: "advanced", speedPercent: 500, generation: "v6" });
   assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-beginner-v5"), { difficulty: "beginner", speedPercent: 100, generation: "v5" });
   assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-intermediate-v5"), { difficulty: "intermediate", speedPercent: 150, generation: "v5" });
   assert.deepEqual(difficultyConfigForRuleset("zdr-difficulty-advanced-v5"), { difficulty: "advanced", speedPercent: 200, generation: "v5" });
@@ -186,12 +188,15 @@ test("four effective current difficulty contacts end at zero stamina", () => {
   let state = createDifficultyGameState();
   for (let index = 0; index < 4; index += 1) {
     const xMm = (zombie.lane - 1) * 2_400;
+    const tick = 100 + index * 50;
+    const moving = getWalkingHazardsInRange(seed, tick + 1, 0, 300_000).find((hazard) => hazard.id === zombie.id);
+    assert.ok(moving);
     state = {
       ...state,
-      tick: 100 + index * 50,
+      tick,
       xMm,
       targetXmm: xMm,
-      distanceMm: zombie.centerMm,
+      distanceMm: moving.centerMm - moving.halfLengthMm - 501,
       contactImmunityUntilTick: 0,
     };
     state = advanceDifficultyGameState(state, seed, { targetXmm: xMm, jump: false }, "beginner");
@@ -199,6 +204,48 @@ test("four effective current difficulty contacts end at zero stamina", () => {
   assert.equal(state.stamina, 0);
   assert.equal(state.terminalReason, "EXHAUSTED");
   assert.equal("hordeGapMm" in state, false);
+});
+
+test("v7 walkers move on the Core clock while v6 hazards stay fixed", () => {
+  const fixed = getDifficultyHazardsInRange(42, 80_000, 300_000);
+  const atZero = getWalkingHazardsInRange(42, 0, 80_000, 300_000);
+  const atSixty = getWalkingHazardsInRange(42, 60, 80_000, 300_000);
+  const zombie = fixed.find((hazard) => hazard.kind === "ZOMBIE");
+  assert.ok(zombie);
+  assert.deepEqual(fixed, getDifficultyHazardsInRange(42, 80_000, 300_000));
+  assert.equal(atZero.find((hazard) => hazard.id === zombie.id)?.centerMm, zombie.centerMm);
+  assert.equal(atSixty.find((hazard) => hazard.id === zombie.id)?.centerMm, zombie.centerMm + 900);
+  assert.equal(atSixty.find((hazard) => hazard.id === zombie.id)?.visualArchetype, "zombie-walking");
+  const barrier = getDifficultyHazardsInRange(7, 80_000, 2_000_000).find((hazard) => hazard.kind === "LOW");
+  assert.ok(barrier);
+  assert.equal(getWalkingHazardsInRange(7, 60, barrier.centerMm - 1_000, barrier.centerMm + 1_000)
+    .find((hazard) => hazard.id === barrier.id)?.centerMm, barrier.centerMm);
+});
+
+test("v6 collision and replay state do not inherit v7 movement", () => {
+  const seed = 42;
+  const zombie = getDifficultyHazardsInRange(seed, 80_000, 200_000).find((hazard) => hazard.kind === "ZOMBIE");
+  assert.ok(zombie);
+  const tick = 100;
+  const xMm = (zombie.lane - 1) * 2_400;
+  const state = { ...createDifficultyGameState(), tick, xMm, targetXmm: xMm, distanceMm: zombie.centerMm - zombie.halfLengthMm - 501 };
+  const next = advanceDifficultyGameState(state, seed, { targetXmm: xMm, jump: false }, "beginner", 100, "v6");
+  assert.equal(next.lastContactHazardId, zombie.id);
+  assert.equal(next.stamina, 75);
+  assert.equal("hordeGapMm" in next, false);
+  const walking = advanceDifficultyGameState(state, seed, { targetXmm: xMm, jump: false }, "beginner", 100, "current");
+  assert.equal(walking.lastContactHazardId, null);
+});
+
+test("a 120m moving-hazard window stays within the four-zombie budget", () => {
+  for (let seed = 0; seed < 32; seed += 1) {
+    for (let tick = 0; tick <= 1800; tick += 30) {
+      const distance = tick * 217;
+      const count = getWalkingHazardsInRange(seed, tick, distance, distance + 120_000)
+        .filter((hazard) => hazard.kind === "ZOMBIE").length;
+      assert.ok(count <= 4, `seed ${seed}, tick ${tick}: ${count} zombies`);
+    }
+  }
 });
 
 function stateAtHazardEntry(state: GameState, hazard: GeneratedHazard, tick: number): GameState {

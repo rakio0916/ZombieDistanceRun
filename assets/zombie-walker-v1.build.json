@@ -1,0 +1,40 @@
+{
+  "model": "zombie-walker-v1.glb",
+  "source": "original Blender geometry and generated material textures; no input photograph pixels",
+  "triangles": 8626,
+  "mesh_objects": 1,
+  "bones": 18,
+  "materials": [
+    "WeatheredFabricAndSkin",
+    "RustHoodFabric",
+    "DryDarkDetails",
+    "CloudedEyes",
+    "TornShortsFabric",
+    "ScuffedLeather"
+  ],
+  "clips": [
+    "Zombie_Walk",
+    "Zombie_Walk_LookBack"
+  ],
+  "size_bytes": 3397480,
+  "sha256": "BD93085ED06FC2E69CFC17FBFCBC634BEB2B495ED7975FF1AF507BB37F8DA649",
+  "generated_at_jst": "2026-09-21T18:38:17.534522+09:00",
+  "textures": {
+    "hood.png": {
+      "size_bytes": 584952,
+      "sha256": "2A49B1732EFB8D2442390007F6B0C53081A52438C560DE25602AB8D7F24AD8FE"
+    },
+    "shoes.png": {
+      "size_bytes": 515716,
+      "sha256": "181CBE7009A4B0DE3727CA9E97915397AB7BFC7647AE7D58EF5340079DF73867"
+    },
+    "shorts.png": {
+      "size_bytes": 545661,
+      "sha256": "59823E45DE303635C61124157CFAFE0A0DDFFAABD87DFB374D359BB05F310A2B"
+    },
+    "skin.png": {
+      "size_bytes": 520468,
+      "sha256": "B18FB93F042093E47F383416ADADD194F2BC3066F2ECE51531ED1648DABFB812"
+    }
+  }
+}

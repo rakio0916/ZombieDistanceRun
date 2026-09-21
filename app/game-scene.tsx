@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import type { AnimationAction, Group, Mesh, Object3D } from "three";
-import { getDifficultyHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
+import type { AnimationAction, AnimationMixer, Group, Mesh, Object3D } from "three";
+import { getWalkingHazardsInRange, WALKING_ZOMBIE_LOOKAHEAD_MM, type GameState, type GeneratedHazard } from "@/lib/game-core";
 import { advanceLateralDrag, beginLateralDrag, type LateralDrag } from "@/lib/lateral-input";
 import {
   getJumpPhase,
@@ -13,7 +13,7 @@ import {
   visibleFrameDelta,
 } from "@/lib/character-animation";
 import type { CharacterDefinition, CharacterId } from "./characters";
-import { animateZombie, makeZombie } from "./zombie-model";
+import { ZOMBIE_ASSET_URL, ZOMBIE_WALK_CLIPS } from "./zombie-asset";
 
 type Phase = "ready" | "starting" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
@@ -26,6 +26,7 @@ export function GameScene({
   phase,
   character,
   onCharacterStatus,
+  onZombieStatus,
   onTargetX,
   onStopHorizontal,
   onJump,
@@ -35,6 +36,7 @@ export function GameScene({
   phase: Phase;
   character: CharacterDefinition;
   onCharacterStatus: (characterId: CharacterId, status: CharacterStatus) => void;
+  onZombieStatus: (status: CharacterStatus) => void;
   onTargetX: (targetXmm: number) => void;
   onStopHorizontal: () => void;
   onJump: () => void;
@@ -95,6 +97,7 @@ export function GameScene({
     void (async () => {
       const THREE = await import("three");
       const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+      const { clone: cloneSkeleton } = await import("three/examples/jsm/utils/SkeletonUtils.js");
       if (disposed) return;
 
       const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -107,7 +110,7 @@ export function GameScene({
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x151b29);
-      scene.fog = new THREE.FogExp2(0x38404c, 0.018);
+      scene.fog = new THREE.FogExp2(0x38404c, 0.0055);
 
       const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 150);
       camera.position.set(0, 2.55, 4.45);
@@ -130,6 +133,53 @@ export function GameScene({
       const world = new THREE.Group();
       scene.add(world);
       addRuinedCity(THREE, world);
+
+      let zombieTemplate: Group | null = null;
+      let zombieClips: import("three").AnimationClip[] = [];
+      const roadsideWalkers: Group[] = [];
+      const makeWalker = (id: string): Group => {
+        if (!zombieTemplate || zombieClips.length !== ZOMBIE_WALK_CLIPS.length) throw new Error("ZOMBIE_NOT_READY");
+        const model = cloneSkeleton(zombieTemplate);
+        const group = new THREE.Group();
+        group.name = `ZombieWalker_${id}`;
+        group.userData.walkingZombie = true;
+        group.userData.phaseTicks = Math.abs(hashZombieId(id)) % 60;
+        const mixer = new THREE.AnimationMixer(model);
+        const walk = mixer.clipAction(zombieClips[0]).play();
+        const glance = mixer.clipAction(zombieClips[1]).play();
+        group.userData.mixer = mixer;
+        group.userData.walkAction = walk;
+        group.userData.glanceAction = glance;
+        model.traverse((child) => {
+          if ("isMesh" in child && child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        group.add(model);
+        return group;
+      };
+
+      onZombieStatus("loading");
+      new GLTFLoader().load(
+        ZOMBIE_ASSET_URL,
+        (gltf) => {
+          if (disposed) { disposeObject(gltf.scene); return; }
+          const clips = ZOMBIE_WALK_CLIPS.map((name) => gltf.animations.find((clip) => clip.name === name));
+          if (clips.some((clip) => !clip)) { disposeObject(gltf.scene); onZombieStatus("error"); return; }
+          zombieTemplate = gltf.scene;
+          zombieClips = clips as import("three").AnimationClip[];
+          for (let index = 0; index < 2; index += 1) {
+            const roadside = makeWalker(`roadside-${index}`);
+            roadside.scale.setScalar(0.85);
+            roadsideWalkers.push(roadside);
+            scene.add(roadside);
+          }
+          onZombieStatus("ready");
+        },
+        undefined,
+        () => { if (!disposed) onZombieStatus("error"); },
+      );
 
       const playerRoot = new THREE.Group();
       scene.add(playerRoot);
@@ -294,7 +344,9 @@ export function GameScene({
           cameraLookX = keepPlayerEnvelopeOnScreen(THREE, camera, playerEnvelope, playerRoot, width, cameraLookX);
         }
         world.position.z = (current.distanceMm / 1_000) % 40;
-        syncHazards(THREE, scene, hazardMeshes, seedRef.current, current.distanceMm, visibleElapsed);
+        if (zombieTemplate) {
+          syncHazards(THREE, scene, hazardMeshes, seedRef.current, current.distanceMm, current.tick, makeWalker, roadsideWalkers);
+        }
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(draw);
       };
@@ -304,7 +356,9 @@ export function GameScene({
         window.cancelAnimationFrame(animationFrame);
         document.removeEventListener("visibilitychange", resetFrameTimestamp);
         mixer?.stopAllAction();
-        for (const mesh of hazardMeshes.values()) disposeObject(mesh);
+        for (const mesh of hazardMeshes.values()) releaseHazard(mesh);
+        for (const walker of roadsideWalkers) releaseHazard(walker);
+        if (zombieTemplate) disposeObject(zombieTemplate);
         disposeObject(world);
         disposeObject(playerRoot);
         renderer.dispose();
@@ -315,7 +369,7 @@ export function GameScene({
       disposed = true;
       cleanup();
     };
-  }, [character, onCharacterStatus]);
+  }, [character, onCharacterStatus, onZombieStatus]);
 
   return (
     <canvas
@@ -480,11 +534,6 @@ function addRuinedCity(THREE: typeof import("three"), world: Group) {
   for (let segment = 0; segment < 5; segment += 1) {
     addWreckedCar(THREE, world, segment % 2 === 0 ? -4.6 : 4.6, -18 - segment * 40, segment);
     for (const side of [-1, 1]) addStreetLamp(THREE, world, side * 4.35, -8 - segment * 40, side);
-    const roadside = makeZombie(THREE, segment % 2);
-    roadside.scale.setScalar(0.82);
-    roadside.position.set(segment % 2 === 0 ? -5.1 : 5.1, 0.15, -30 - segment * 40);
-    roadside.rotation.y = segment % 2 === 0 ? -1.2 : 1.2;
-    world.add(roadside);
   }
 }
 
@@ -526,8 +575,8 @@ function addStreetLamp(THREE: typeof import("three"), parent: Group, x: number, 
   parent.add(group);
 }
 
-function makeHazard(THREE: typeof import("three"), hazard: GeneratedHazard): Group {
-  if (hazard.kind === "ZOMBIE") return makeZombie(THREE, hazard.lane + hazard.centerMm / 72_000);
+function makeHazard(THREE: typeof import("three"), hazard: GeneratedHazard, makeWalker: (id: string) => Group): Group {
+  if (hazard.kind === "ZOMBIE") return makeWalker(hazard.id);
   const group = new THREE.Group();
   if (hazard.kind === "SOLID") {
     addWreckedCar(THREE, group, 0, 0, Math.floor(hazard.centerMm / 72_000));
@@ -550,26 +599,64 @@ function syncHazards(
   meshes: Map<string, Group>,
   seed: number,
   distanceMm: number,
-  elapsed: number,
+  tick: number,
+  makeWalker: (id: string) => Group,
+  roadsideWalkers: Group[],
 ) {
-  const hazards = getDifficultyHazardsInRange(seed, distanceMm - 3_000, distanceMm + 60_000);
+  const hazards = getWalkingHazardsInRange(seed, tick, distanceMm - 3_000, distanceMm + WALKING_ZOMBIE_LOOKAHEAD_MM);
   const visibleIds = new Set(hazards.map((hazard) => hazard.id));
   for (const hazard of hazards) {
     let mesh = meshes.get(hazard.id);
     if (!mesh) {
-      mesh = makeHazard(THREE, hazard);
+      mesh = makeHazard(THREE, hazard, makeWalker);
       meshes.set(hazard.id, mesh);
       scene.add(mesh);
     }
     mesh.position.set((hazard.lane - 1) * 2.4, 0, -(hazard.centerMm - distanceMm) / 1_000);
-    if (hazard.kind === "ZOMBIE") animateZombie(mesh, elapsed);
+    if (hazard.kind === "ZOMBIE") animateWalker(mesh, tick);
   }
   for (const [id, mesh] of meshes) {
     if (!visibleIds.has(id)) {
       scene.remove(mesh);
-      disposeObject(mesh);
+      releaseHazard(mesh);
       meshes.delete(id);
     }
+  }
+  const walkedMm = tick * 15;
+  for (let index = 0; index < roadsideWalkers.length; index += 1) {
+    const walker = roadsideWalkers[index];
+    const baseMm = 30_000 + index * 40_000;
+    const repeatIndex = Math.max(0, Math.ceil((distanceMm - walkedMm - 3_000 - baseMm) / 80_000));
+    const centerMm = baseMm + repeatIndex * 80_000 + walkedMm;
+    walker.position.set(index === 0 ? -5.1 : 5.1, 0, -(centerMm - distanceMm) / 1_000);
+    animateWalker(walker, tick);
+  }
+}
+
+function hashZombieId(id: string): number {
+  let hash = 2_166_136_261;
+  for (const char of id) hash = Math.imul(hash ^ char.charCodeAt(0), 16_777_619);
+  return hash >>> 0;
+}
+
+function animateWalker(group: Group, tick: number) {
+  const mixer = group.userData.mixer as AnimationMixer;
+  const walk = group.userData.walkAction as AnimationAction;
+  const glance = group.userData.glanceAction as AnimationAction;
+  const glanceTick = (tick + Number(group.userData.phaseTicks) * 3) % 240;
+  const weight = glanceTick < 60 ? Math.sin(Math.PI * glanceTick / 60) ** 2 : 0;
+  walk.setEffectiveWeight(1 - weight);
+  glance.setEffectiveWeight(weight);
+  mixer.setTime(tick / 30);
+}
+
+function releaseHazard(group: Group) {
+  if (group.userData.walkingZombie) {
+    const mixer = group.userData.mixer as AnimationMixer;
+    mixer.stopAllAction();
+    mixer.uncacheRoot(group.children[0]);
+  } else {
+    disposeObject(group);
   }
 }
 
