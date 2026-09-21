@@ -1,5 +1,7 @@
 # Zombie Distance Run
 
+The stamina game-over video now requests playback when it appears, and offers replay or result choices if it has not started after four seconds. This fix is local and on GitHub; Sites version 20 remains the deployed version.
+
 The current front-road and roadside zombies use `public/game/zombies/zombie-walker-v1.glb`: an original skinned walker with rust-red torn clothing, gray-brown skin, and walk/look-back clips. Build it with Blender 5.2 using `scripts/build-reference-zombie.py`, then sample both exported clips with `scripts/verify-reference-zombie.py`. `assets/zombie-walker-v1.build.json` records the distributed GLB's exact SHA-256 and source texture hashes; the reference photograph is not part of this repository.
 
 New runs use Core 8.0.0 and difficulty rulesets v7. The walking zombie's 15 mm/tick Core position is shared by rendering, collision, and server replay. Fixed v6 and older rulesets remain available for historical runs. Run `npm run test:core`, `npm run lint`, and `npm run build` before release.
