@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0.0",
+  "character_id": "runner_002",
+  "release_id": "runner_002_web_v6",
+  "release_version": 6,
+  "release_status": "draft",
+  "source": {
+    "sha256": "313c310e2476071f1523de88f0e0e34e6e0dba359d4f45395f80ca44082d9020"
+  },
+  "web_glb": {
+    "relative_path": "characters/runner_002/v6/CH_runner_002_Web_v6.glb",
+    "sha256": "6f7074694b91993498a15179aceb36c3b0f5418866df0f66828a0d06f592c125",
+    "size_bytes": 2425456,
+    "media_type": "model/gltf-binary",
+    "triangle_count": 34327,
+    "material_count": 1
+  },
+  "coordinate_system": {
+    "unit": "meter",
+    "meters_per_unit": 1,
+    "up_axis": "+Y",
+    "forward_axis": "+Z",
+    "ground_offset_m": 0
+  },
+  "collider": {
+    "profile_id": "runner_standard_v1",
+    "half_width_mm": 450,
+    "half_length_mm": 500
+  },
+  "animations": [
+    {
+      "logical_name": "Idle",
+      "clip_name": "Web_Idle",
+      "loop": true,
+      "duration_seconds": 1.0
+    },
+    {
+      "logical_name": "Run",
+      "clip_name": "Run_03",
+      "loop": true,
+      "duration_seconds": 0.833333
+    },
+    {
+      "logical_name": "Jump",
+      "clip_name": "Web_Jump",
+      "loop": false,
+      "duration_seconds": 0.791667
+    },
+    {
+      "logical_name": "Stumble",
+      "clip_name": "Web_Stumble",
+      "loop": false,
+      "duration_seconds": 0.75
+    },
+    {
+      "logical_name": "Caught",
+      "clip_name": "Web_Caught",
+      "loop": false,
+      "duration_seconds": 1.0
+    }
+  ],
+  "compression": {
+    "mesh": "none",
+    "textures": "embedded_png_jpeg",
+    "decoder_version": "none"
+  },
+  "licensing": {
+    "commercial_web_use_confirmed": true,
+    "attribution_required": false
+  },
+  "appearance_approval": {
+    "approved": false,
+    "target_sha256": "6f7074694b91993498a15179aceb36c3b0f5418866df0f66828a0d06f592c125"
+  },
+  "publication_approval": {
+    "approved": false,
+    "target_sha256": "6f7074694b91993498a15179aceb36c3b0f5418866df0f66828a0d06f592c125",
+    "public_distribution": false,
+    "browser_cache_and_retrieval": false,
+    "gameplay_chase_and_caught_depiction": false
+  }
+}
