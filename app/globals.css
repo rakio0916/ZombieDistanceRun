@@ -353,7 +353,6 @@ button, a { font: inherit; }
   .zdr-canvas { height: 68svh; min-height: 430px; }
   .zdr-hud { top: 17px; left: 16px; right: 16px; gap: 5px; }
   .zdr-hud > div { padding: 5px 7px; }
-  .zdr-hud > div:nth-child(2) { display: none; }
   .zdr-hud span { font-size: .7rem; }
   .zdr-scene-title { top: 68px; }
   .zdr-load-state, .zdr-caught { inset: 7px 7px 127px; }
@@ -409,7 +408,6 @@ button, a { font: inherit; }
 .zdr-playfield .zdr-scene-title { top: 72px; }
 .zdr-playfield .zdr-load-state, .zdr-playfield .zdr-caught { inset: 0; }
 .zdr-run-label { min-width: 74px; }
-.zdr-crowd { margin-left: auto; }
 .zdr-phase-overlay { position: absolute; z-index: 6; inset: 0; display: grid; place-items: center; color: #f4d4ad; background: rgba(7,11,17,.72); font-weight: 900; font-size: 1.05rem; }
 .zdr-result-actions { justify-self: center; width: min(100%, 680px); padding: 1rem; border: 1px solid rgba(231,187,126,.25); background: rgba(4,8,13,.72); text-align: center; }
 .zdr-result-actions h2 { margin: 0; color: #f4efe7; font-size: 1.08rem; }
@@ -437,7 +435,6 @@ button, a { font: inherit; }
   .zdr-playfield .zdr-hud > div { padding: 4px 6px; }
   .zdr-playfield .zdr-hud strong { font-size: .92rem; }
   .zdr-playfield .zdr-scene-title { top: 82px; }
-  .zdr-crowd { display: none; }
   .zdr-result-actions > div { grid-template-columns: 1fr; }
 }
 

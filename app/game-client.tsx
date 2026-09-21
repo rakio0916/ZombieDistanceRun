@@ -277,7 +277,6 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     };
   }, [queueJump]);
 
-  const crowdCount = 6 + 3 * Math.floor(game.distanceMm / 250_000);
   const displayDifficulty = isActive || phase === "ended" ? runDifficulty : selectedDifficulty;
   const displayCharacter = isActive || phase === "ended" ? activeRunCharacter : selectedCharacter;
 
@@ -319,7 +318,6 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <div className="zdr-run-label"><span>{displayCharacter.label}</span><strong>{DIFFICULTIES[displayDifficulty].label}</strong></div>
             <div><span>距離</span><strong>{formatMeters(game.distanceMm)}m</strong></div>
             <div className="zdr-stamina"><span>スタミナ {game.stamina}</span><i><b style={{ width: `${game.stamina}%` }} /></i></div>
-            <div className="zdr-crowd"><span>群れ</span><strong>{crowdCount}体</strong></div>
           </div>
           <GameScene game={game} seed={seed} phase={phase} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onTargetX={setTargetX} onStopHorizontal={stopHorizontalMovement} onJump={queueJump} />
           {characterStatus !== "ready" && <div className="zdr-load-state" role="status">{characterStatus === "loading" ? `${selectedCharacter.label}の人物3Dと街を読み込み中…` : `${selectedCharacter.label}の人物3Dを読み込めませんでした。別の人物を選ぶか、再読み込みしてください。`}</div>}
@@ -349,7 +347,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
       {!isActive && (
         <aside className="zdr-panel">
           <p className="zdr-kicker">ZOMBIE DISTANCE RUN</p>
-          <h1>走れ。<br />群れが増える前に。</h1>
+          <h1>走れ。<br />ゾンビを避けて、走り抜けろ。</h1>
           <p className="zdr-notice">{notice}</p>
           <dl className="zdr-rules">
             <div><dt>PC</dt><dd>A / D、← / →で移動、Spaceでジャンプ</dd></div>

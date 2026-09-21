@@ -5,7 +5,7 @@ import type { AnimationAction, Group, Mesh, Object3D } from "three";
 import { getDifficultyHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
 import { advanceLateralDrag, beginLateralDrag, type LateralDrag } from "@/lib/lateral-input";
 import type { CharacterDefinition, CharacterId } from "./characters";
-import { animateZombie, makeZombie, setZombieOpacity } from "./zombie-model";
+import { animateZombie, makeZombie } from "./zombie-model";
 
 type Phase = "ready" | "starting" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
@@ -181,16 +181,6 @@ export function GameScene({
       );
 
       const hazardMeshes = new Map<string, Group>();
-      const rearLeft = makeZombie(THREE, 0, true);
-      const rearRight = makeZombie(THREE, 1, true);
-      rearLeft.position.set(-1.75, -0.22, 2.05);
-      rearRight.position.set(1.75, -0.22, 2.05);
-      rearLeft.rotation.y = Math.PI;
-      rearRight.rotation.y = Math.PI;
-      scene.add(rearLeft, rearRight);
-      setZombieOpacity(rearLeft, 0);
-      setZombieOpacity(rearRight, 0);
-
       const clock = new THREE.Clock();
       let animationFrame = 0;
       let lastWidth = 0;
@@ -267,8 +257,6 @@ export function GameScene({
         }
         world.position.z = (current.distanceMm / 1_000) % 40;
         syncHazards(THREE, scene, hazardMeshes, seedRef.current, current.distanceMm, elapsed);
-        syncRearHorde(rearLeft, rearRight, current.stamina, elapsed);
-
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(draw);
       };
@@ -280,8 +268,6 @@ export function GameScene({
         for (const mesh of hazardMeshes.values()) disposeObject(mesh);
         disposeObject(world);
         disposeObject(playerRoot);
-        disposeObject(rearLeft);
-        disposeObject(rearRight);
         renderer.dispose();
       };
     })();
@@ -455,7 +441,7 @@ function addRuinedCity(THREE: typeof import("three"), world: Group) {
   for (let segment = 0; segment < 5; segment += 1) {
     addWreckedCar(THREE, world, segment % 2 === 0 ? -4.6 : 4.6, -18 - segment * 40, segment);
     for (const side of [-1, 1]) addStreetLamp(THREE, world, side * 4.35, -8 - segment * 40, side);
-    const roadside = makeZombie(THREE, segment % 2, false);
+    const roadside = makeZombie(THREE, segment % 2);
     roadside.scale.setScalar(0.82);
     roadside.position.set(segment % 2 === 0 ? -5.1 : 5.1, 0.15, -30 - segment * 40);
     roadside.rotation.y = segment % 2 === 0 ? -1.2 : 1.2;
@@ -502,7 +488,7 @@ function addStreetLamp(THREE: typeof import("three"), parent: Group, x: number, 
 }
 
 function makeHazard(THREE: typeof import("three"), hazard: GeneratedHazard): Group {
-  if (hazard.kind === "ZOMBIE") return makeZombie(THREE, hazard.lane + hazard.centerMm / 72_000, false);
+  if (hazard.kind === "ZOMBIE") return makeZombie(THREE, hazard.lane + hazard.centerMm / 72_000);
   const group = new THREE.Group();
   if (hazard.kind === "SOLID") {
     addWreckedCar(THREE, group, 0, 0, Math.floor(hazard.centerMm / 72_000));
@@ -546,19 +532,6 @@ function syncHazards(
       meshes.delete(id);
     }
   }
-}
-
-function syncRearHorde(left: Group, right: Group, stamina: number, elapsed: number) {
-  const proximity = Math.max(0, Math.min(1, (100 - stamina) / 100));
-  const opacity = proximity < 0.04 ? 0 : Math.min(0.86, proximity * 1.1);
-  setZombieOpacity(left, opacity);
-  setZombieOpacity(right, opacity);
-  left.position.z = 2.6 - proximity * 0.8;
-  right.position.z = 2.65 - proximity * 0.82;
-  left.position.y = -0.36 + proximity * 0.28;
-  right.position.y = -0.36 + proximity * 0.28;
-  animateZombie(left, elapsed);
-  animateZombie(right, elapsed + 0.8);
 }
 
 function normalizeModel(THREE: typeof import("three"), model: Object3D) {

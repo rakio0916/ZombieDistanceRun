@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { animateZombie, makeZombie, ZOMBIE_VISUAL_RELEASE_ID } from "../app/zombie-model.ts";
 
 test("urban decayed zombie keeps its threatening silhouette inside the gameplay footprint", () => {
-  const zombie = makeZombie(THREE, 0, false);
+  const zombie = makeZombie(THREE, 0);
   zombie.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(zombie);
   const size = bounds.getSize(new THREE.Vector3());
@@ -16,8 +16,8 @@ test("urban decayed zombie keeps its threatening silhouette inside the gameplay 
 });
 
 test("urban decayed zombie exposes the approved face and clothing cues", () => {
-  const dark = makeZombie(THREE, 0, false);
-  const rust = makeZombie(THREE, 1, false);
+  const dark = makeZombie(THREE, 0);
+  const rust = makeZombie(THREE, 1);
   const names = new Set<string>();
   let triangleCount = 0;
   dark.traverse((child) => {
@@ -46,7 +46,7 @@ test("urban decayed zombie exposes the approved face and clothing cues", () => {
 });
 
 test("threat animation changes pose without root translation", () => {
-  const zombie = makeZombie(THREE, 0, false);
+  const zombie = makeZombie(THREE, 0);
   const before = zombie.position.clone();
   const head = zombie.userData.head as THREE.Object3D;
   const arm = zombie.userData.leftArm as THREE.Object3D;

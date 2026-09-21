@@ -1,10 +1,10 @@
-import type { Group, Mesh, Object3D } from "three";
+import type { Group, Object3D } from "three";
 
 export const ZOMBIE_VISUAL_RELEASE_ID = "zdr-urban-decayed-v1";
 
 type ZombiePart = Object3D & { rotation: { x: number; y: number; z: number } };
 
-export function makeZombie(THREE: typeof import("three"), variantSeed: number, transparent: boolean): Group {
+export function makeZombie(THREE: typeof import("three"), variantSeed: number): Group {
   const variant = Math.abs(Math.trunc(variantSeed)) % 2;
   const group = new THREE.Group();
   group.name = `UrbanDecayedZombie_${variant === 0 ? "Dark" : "Rust"}`;
@@ -21,31 +21,26 @@ export function makeZombie(THREE: typeof import("three"), variantSeed: number, t
     color: variant === 0 ? 0x68705f : 0x77715f,
     roughness: 0.98,
     metalness: 0,
-    transparent,
   });
   const decay = new THREE.MeshStandardMaterial({
     name: "ZombieDecay",
     color: variant === 0 ? 0x394238 : 0x4a4035,
     roughness: 1,
-    transparent,
   });
   const clothes = new THREE.MeshStandardMaterial({
     name: "ZombieClothes",
     color: variant === 0 ? 0x24282c : 0x64362e,
     roughness: 1,
-    transparent,
   });
   const trousers = new THREE.MeshStandardMaterial({
     name: "ZombieTrousers",
     color: variant === 0 ? 0x202326 : 0x292727,
     roughness: 1,
-    transparent,
   });
   const socket = new THREE.MeshStandardMaterial({
     name: "ZombieEyeSocket",
     color: 0x090b0c,
     roughness: 1,
-    transparent,
   });
   const eye = new THREE.MeshStandardMaterial({
     name: "ZombieEyeGlint",
@@ -53,13 +48,11 @@ export function makeZombie(THREE: typeof import("three"), variantSeed: number, t
     emissive: 0x5c2108,
     emissiveIntensity: 0.9,
     roughness: 0.62,
-    transparent,
   });
   const teeth = new THREE.MeshStandardMaterial({
     name: "ZombieTeeth",
     color: 0xb9aa82,
     roughness: 0.92,
-    transparent,
   });
 
   const torsoRoot = new THREE.Group();
@@ -292,18 +285,4 @@ export function animateZombie(group: Group, elapsed: number) {
   if (torso) torso.rotation.y = sway * 0.045;
   if (leftLeg) leftLeg.rotation.x += (gait * 0.04 - leftLeg.rotation.x) * 0.08;
   if (rightLeg) rightLeg.rotation.x += (-gait * 0.04 - rightLeg.rotation.x) * 0.08;
-}
-
-export function setZombieOpacity(group: Group, opacity: number) {
-  group.visible = opacity > 0.001;
-  group.traverse((child) => {
-    if (!("isMesh" in child) || !child.isMesh) return;
-    const mesh = child as Mesh;
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const material of materials) {
-      material.transparent = true;
-      material.opacity = opacity;
-      material.depthWrite = opacity >= 0.98;
-    }
-  });
 }

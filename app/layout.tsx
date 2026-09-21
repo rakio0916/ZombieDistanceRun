@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Zombie Distance Run",
-  description: "ゾンビの群れから逃げた距離を競う、日次ランニングゲーム。",
+  description: "前方のゾンビや障害物を避けて走った距離を競う、日次ランニングゲーム。",
   other: {
     "codex-preview": "development",
   },
