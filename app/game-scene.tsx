@@ -24,6 +24,7 @@ export function GameScene({
   game,
   seed,
   phase,
+  suspended,
   character,
   onCharacterStatus,
   onZombieStatus,
@@ -34,6 +35,7 @@ export function GameScene({
   game: GameState;
   seed: number;
   phase: Phase;
+  suspended: boolean;
   character: CharacterDefinition;
   onCharacterStatus: (characterId: CharacterId, status: CharacterStatus) => void;
   onZombieStatus: (status: CharacterStatus) => void;
@@ -45,6 +47,7 @@ export function GameScene({
   const gameRef = useRef(game);
   const seedRef = useRef(seed);
   const phaseRef = useRef(phase);
+  const suspendedRef = useRef(suspended);
   const gestureRef = useRef<(LateralDrag & { canvasWidth: number; canvasHeight: number }) | null>(null);
 
   const stopGesture = useCallback((pointerId?: number) => {
@@ -84,11 +87,12 @@ export function GameScene({
   }, [stopGesture]);
 
   useEffect(() => {
+    if (phase !== "running") stopGesture();
     gameRef.current = game;
     seedRef.current = seed;
     phaseRef.current = phase;
-    if (phase !== "running") gestureRef.current = null;
-  }, [game, seed, phase]);
+    suspendedRef.current = suspended;
+  }, [game, seed, phase, suspended, stopGesture]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -283,6 +287,11 @@ export function GameScene({
 
       const draw = (timestamp = performance.now()) => {
         if (disposed) return;
+        if (suspendedRef.current) {
+          lastFrameTimestamp = timestamp;
+          animationFrame = window.requestAnimationFrame(draw);
+          return;
+        }
         const rect = canvas.getBoundingClientRect();
         const width = Math.max(1, Math.floor(rect.width));
         const height = Math.max(1, Math.floor(rect.height));

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GameScene } from "./game-scene";
+import { GameOverVideo } from "./game-over-video";
 import {
   advanceDifficultyGameState,
   challengeDateInTokyo,
@@ -40,6 +41,9 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const runDifficultyRef = useRef<Difficulty>("beginner");
   const runCharacterRef = useRef<CharacterId>("runner_001");
   const timerRef = useRef<number | null>(null);
+  const savePendingRef = useRef(false);
+  const gameOverVideoRef = useRef(false);
+  const finishSubmissionRef = useRef<{ run: OfficialRun; body: string; difficulty: Difficulty; distanceMm: number } | null>(null);
   const setupHeadingRef = useRef<HTMLHeadingElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const [phase, setPhase] = useState<Phase>("ready");
@@ -56,6 +60,8 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const [runDifficulty, setRunDifficulty] = useState<Difficulty>("beginner");
   const [runCharacterId, setRunCharacterId] = useState<CharacterId>("runner_001");
   const [setupOpen, setSetupOpen] = useState(true);
+  const [showGameOverVideo, setShowGameOverVideo] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "failed">("idle");
   const [hydrated, setHydrated] = useState(false);
   const selectedCharacter = CHARACTERS[selectedCharacterId];
   const activeRunCharacter = CHARACTERS[runCharacterId];
@@ -106,48 +112,74 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     return () => window.clearTimeout(timeout);
   }, [loadLeaderboard, selectedDifficulty]);
 
-  const finish = useCallback(async (final: GameState) => {
+  const submitFinish = useCallback(async () => {
+    const submission = finishSubmissionRef.current;
+    if (!submission || saveStatus === "pending") return;
+    setSaveStatus("pending");
+    try {
+      const response = await fetch(`/api/v1/runs/${submission.run.run_id}/finish`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: submission.body,
+      });
+      const data = (await response.json()) as { run?: { distance_m: number; time_limit_completed: boolean }; was_personal_best?: boolean; error?: string };
+      if (!response.ok || !data.run) throw new Error(data.error ?? "SAVE_FAILED");
+      setNotice(data.run.time_limit_completed
+        ? `${DIFFICULTIES[submission.difficulty].label}で30:00完走！ ${data.run.distance_m}mを記録しました。`
+        : `${DIFFICULTIES[submission.difficulty].label}で${data.run.distance_m}mを記録しました${data.was_personal_best ? "。自己ベストです！" : "。"}`);
+      finishSubmissionRef.current = null;
+      savePendingRef.current = false;
+      setSaveStatus("idle");
+      void loadLeaderboard(submission.difficulty);
+    } catch {
+      setNotice(`結果は ${formatMeters(submission.distanceMm)}m。記録を確認できませんでした。同じ記録を再送してください。`);
+      setSaveStatus("failed");
+    }
+  }, [loadLeaderboard, saveStatus]);
+
+  const finish = useCallback((final: GameState) => {
+    if (phaseRef.current !== "running") return;
     window.clearInterval(timerRef.current ?? undefined);
     timerRef.current = null;
     keyboardDirectionRef.current = 0;
     jumpQueuedRef.current = false;
-    phaseRef.current = "saving";
-    setPhase("saving");
+    phaseRef.current = "ended";
+    setPhase("ended");
+    const playVideo = final.terminalReason === "EXHAUSTED";
+    gameOverVideoRef.current = playVideo;
+    setShowGameOverVideo(playVideo);
     const difficulty = runDifficultyRef.current;
     const official = officialRunRef.current;
     if (!official) {
       const result = final.terminalReason === "TIME_LIMIT" ? "30:00完走" : "スタミナ切れ";
       setNotice(`${DIFFICULTIES[difficulty].label}の練習結果 ${formatMeters(final.distanceMm)}m（${result}）。`);
-      phaseRef.current = "ended";
-      setPhase("ended");
-      window.setTimeout(() => resultHeadingRef.current?.focus({ preventScroll: true }), 0);
+      if (!playVideo) window.setTimeout(() => resultHeadingRef.current?.focus({ preventScroll: true }), 0);
       return;
     }
-    try {
-      const response = await fetch(`/api/v1/runs/${official.run_id}/finish`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+    savePendingRef.current = true;
+    finishSubmissionRef.current = {
+      run: official,
+      difficulty,
+      distanceMm: final.distanceMm,
+      body: JSON.stringify({
           schema_version: "4.0.0",
           submission_id: crypto.randomUUID(),
           final_tick: final.tick,
           terminal_reason: final.terminalReason,
           input_b64: encodeDifficultyInputs(inputsRef.current),
-        }),
-      });
-      const data = (await response.json()) as { run?: { distance_m: number; time_limit_completed: boolean }; was_personal_best?: boolean; error?: string };
-      if (!response.ok || !data.run) throw new Error(data.error ?? "SAVE_FAILED");
-      setNotice(data.run.time_limit_completed
-        ? `${DIFFICULTIES[difficulty].label}で30:00完走！ ${data.run.distance_m}mを記録しました。`
-        : `${DIFFICULTIES[difficulty].label}で${data.run.distance_m}mを記録しました${data.was_personal_best ? "。自己ベストです！" : "。"}`);
-      void loadLeaderboard(difficulty);
-    } catch {
-      setNotice(`結果は ${formatMeters(final.distanceMm)}m。記録サービスへ送れなかったためランキングには登録していません。`);
-    }
-    phaseRef.current = "ended";
-    setPhase("ended");
+      }),
+    };
+    setNotice(`結果は ${formatMeters(final.distanceMm)}m。記録を確認中です…`);
+    void submitFinish();
+    if (!playVideo) window.setTimeout(() => resultHeadingRef.current?.focus({ preventScroll: true }), 0);
+  }, [submitFinish]);
+
+  const completeGameOverVideo = useCallback(() => {
+    if (!gameOverVideoRef.current) return;
+    gameOverVideoRef.current = false;
+    setShowGameOverVideo(false);
     window.setTimeout(() => resultHeadingRef.current?.focus({ preventScroll: true }), 0);
-  }, [loadLeaderboard]);
+  }, []);
 
   const queueJump = useCallback(() => {
     if (phaseRef.current === "running") jumpQueuedRef.current = true;
@@ -165,6 +197,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
 
   const start = useCallback(async () => {
     if (phaseRef.current !== "ready" && phaseRef.current !== "ended") return;
+    if (savePendingRef.current || gameOverVideoRef.current) return;
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
     if (characterStatus !== "ready") {
       setSetupOpen(true);
@@ -183,6 +216,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     setRunDifficulty(difficulty);
     setRunCharacterId(characterId);
     setSetupOpen(false);
+    setShowGameOverVideo(false);
     phaseRef.current = "starting";
     setPhase("starting");
     keyboardDirectionRef.current = 0;
@@ -312,8 +346,8 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
                 ))}
               </div>
             </div>
-            <button className="zdr-start" type="button" onClick={() => void start()} disabled={characterStatus !== "ready" || zombieStatus !== "ready"}>
-              {characterStatus === "loading" || zombieStatus === "loading" ? "読み込み中" : characterStatus === "error" || zombieStatus === "error" ? "読込エラー" : signedIn ? "ランク戦を開始" : "練習を開始"}
+            <button className="zdr-start" type="button" onClick={() => void start()} disabled={characterStatus !== "ready" || zombieStatus !== "ready" || saveStatus !== "idle"}>
+              {saveStatus === "pending" ? "記録を確認中…" : saveStatus === "failed" ? "記録の再送が必要" : characterStatus === "loading" || zombieStatus === "loading" ? "読み込み中" : characterStatus === "error" || zombieStatus === "error" ? "読込エラー" : signedIn ? "ランク戦を開始" : "練習を開始"}
             </button>
           </section>
         )}
@@ -325,7 +359,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <div><span>距離</span><strong>{formatMeters(game.distanceMm)}m</strong></div>
             <div className="zdr-stamina"><span>スタミナ {game.stamina}</span><i><b style={{ width: `${game.stamina}%` }} /></i></div>
           </div>
-          <GameScene game={game} seed={seed} phase={phase} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onZombieStatus={setZombieStatus} onTargetX={setTargetX} onStopHorizontal={stopHorizontalMovement} onJump={queueJump} />
+          <GameScene game={game} seed={seed} phase={phase} suspended={showGameOverVideo} character={selectedCharacter} onCharacterStatus={onCharacterStatus} onZombieStatus={setZombieStatus} onTargetX={setTargetX} onStopHorizontal={stopHorizontalMovement} onJump={queueJump} />
           {(characterStatus !== "ready" || zombieStatus !== "ready") && <div className="zdr-load-state" role="status">{characterStatus === "error" || zombieStatus === "error" ? "必要な3Dモデルを読み込めませんでした。通信を確認して再読み込みしてください。" : "人物3D、ゾンビ3Dと街を読み込み中…"}</div>}
           {game.terminalReason && <div className="zdr-caught" aria-hidden="true">{game.terminalReason === "TIME_LIMIT" ? "30:00 完走" : "スタミナ切れ"}</div>}
           {phase === "starting" && <div className="zdr-phase-overlay" role="status">{DIFFICULTIES[runDifficulty].label}で開始しています…</div>}
@@ -343,9 +377,11 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <h2 id="result-title" ref={resultHeadingRef} tabIndex={-1}>{displayCharacter.label}・{DIFFICULTIES[runDifficulty].label}の結果</h2>
             <p>{notice}</p>
             <div>
-              <button className="zdr-start" type="button" onClick={() => void start()}>同じ設定でもう一度</button>
+              <button className="zdr-start" type="button" onClick={() => void start()} disabled={saveStatus !== "idle"}>同じ設定でもう一度</button>
               <button type="button" onClick={() => { setSetupOpen(true); setSelectedCharacterId(runCharacterRef.current); setSelectedDifficulty(runDifficultyRef.current); window.setTimeout(() => setupHeadingRef.current?.focus({ preventScroll: true }), 0); }}>主人公・レベルを変更</button>
             </div>
+            {saveStatus === "pending" && <p role="status">記録を確認中です。確認後に再挑戦できます。</p>}
+            {saveStatus === "failed" && <button type="button" onClick={() => void submitFinish()}>同じ記録を再送</button>}
           </section>
         )}
       </section>
@@ -367,6 +403,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
           </div>
         </aside>
       )}
+      {showGameOverVideo && <GameOverVideo onComplete={completeGameOverVideo} />}
     </main>
   );
 }
