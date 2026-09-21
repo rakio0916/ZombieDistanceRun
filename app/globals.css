@@ -450,3 +450,25 @@ button, a { font: inherit; }
   .zdr-game.is-active { min-height: calc(100svh - 52px); }
   .zdr-game.is-active .zdr-canvas { height: calc(100svh - 116px); }
 }
+
+/* The selection screen uses the former game-preview area for the daily top three. */
+.zdr-game.is-setup { grid-template-rows: auto auto auto; align-content: start; }
+.zdr-game.is-setup .zdr-game-status { display: none; }
+.zdr-playfield[hidden] { display: none; }
+.zdr-game.is-setup .zdr-board { width: min(100%, 760px); justify-self: center; margin: clamp(14px, 3vw, 30px) 0; padding: clamp(16px, 3vw, 30px); border: 1px solid rgba(231,187,126,.35); background: rgba(4,8,13,.72); color: #f4efe7; }
+.zdr-board-title h2 { margin: 0; font-size: clamp(1.2rem, 2vw, 1.6rem); }
+.zdr-board-title p { margin: .25rem 0 0; color: #aeb7c3; font-size: .9rem; }
+.zdr-top-three-table { width: 100%; margin-top: 14px; border-collapse: collapse; table-layout: fixed; }
+.zdr-top-three-table th, .zdr-top-three-table td { padding: 11px 8px; border-bottom: 1px solid rgba(255,255,255,.14); text-align: left; font-size: clamp(.9rem, 1.5vw, 1.04rem); }
+.zdr-top-three-table thead th { color: #aeb7c3; font-size: .84rem; font-weight: 700; }
+.zdr-top-three-table th:first-child { width: 68px; }
+.zdr-top-three-table th:last-child, .zdr-top-three-table td:last-child { width: 132px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.zdr-top-three-table tbody th { color: #e6a24c; }
+.zdr-top-three-table tbody td:nth-child(2) { overflow-wrap: anywhere; }
+.zdr-top-three-table small { display: block; color: #e6a24c; font-size: .74rem; }
+@media (max-width: 480px) {
+  .zdr-game.is-setup .zdr-board { padding: 14px 10px; }
+  .zdr-top-three-table th, .zdr-top-three-table td { padding: 10px 5px; }
+  .zdr-top-three-table th:first-child { width: 48px; }
+  .zdr-top-three-table th:last-child, .zdr-top-three-table td:last-child { width: 104px; }
+}

@@ -20,6 +20,7 @@ import { encodeDifficultyInputs } from "@/lib/game-api";
 import { CHARACTERS, CHARACTER_IDS, isCharacterId, type CharacterId } from "./characters";
 
 type LeaderboardEntry = { rank: number; display_name: string; distance_m: number; time_limit_completed: boolean };
+type LeaderboardStatus = "loading" | "ready" | "error";
 type OfficialRun = { run_id: string; seed: number; display_name: string; difficulty: Difficulty; ruleset_id: string; input_schema_version: "4.0.0" };
 type Phase = "ready" | "starting" | "running" | "saving" | "ended";
 type CharacterStatus = "loading" | "ready" | "error";
@@ -46,10 +47,12 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const finishSubmissionRef = useRef<{ run: OfficialRun; body: string; difficulty: Difficulty; distanceMm: number } | null>(null);
   const setupHeadingRef = useRef<HTMLHeadingElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
+  const leaderboardRequestRef = useRef(0);
   const [phase, setPhase] = useState<Phase>("ready");
   const phaseRef = useRef<Phase>("ready");
   const [game, setGame] = useState<GameState>(() => createDifficultyGameState());
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardStatus, setLeaderboardStatus] = useState<LeaderboardStatus>("loading");
   const [notice, setNotice] = useState("主人公とレベルを選んで開始してください。");
   const [alias, setAlias] = useState<string | null>(null);
   const [seed, setSeed] = useState(() => seedForDate(challengeDateInTokyo()));
@@ -96,14 +99,21 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   }, [hydrated, selectedDifficulty]);
 
   const loadLeaderboard = useCallback(async (difficulty: Difficulty) => {
+    const requestId = ++leaderboardRequestRef.current;
+    setLeaderboardStatus("loading");
+    setLeaderboard([]);
     try {
       const rulesetId = DIFFICULTY_RULESET_IDS[difficulty];
       const response = await fetch(`/api/v1/leaderboards/daily?ruleset_id=${encodeURIComponent(rulesetId)}`, { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json()) as { entries: LeaderboardEntry[] };
-      setLeaderboard(data.entries);
+      if (!response.ok) throw new Error("LEADERBOARD_UNAVAILABLE");
+      const data = (await response.json()) as { ruleset_id: string; entries: LeaderboardEntry[] };
+      if (data.ruleset_id !== rulesetId || !Array.isArray(data.entries)) throw new Error("LEADERBOARD_MISMATCH");
+      if (requestId !== leaderboardRequestRef.current) return;
+      setLeaderboard(data.entries.slice(0, 3));
+      setLeaderboardStatus("ready");
     } catch {
-      // The play surface remains available if the ranking service is unavailable.
+      if (requestId !== leaderboardRequestRef.current) return;
+      setLeaderboardStatus("error");
     }
   }, []);
 
@@ -237,12 +247,12 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
           officialRunRef.current = data.run;
           runSeed = data.run.seed;
           setAlias(data.run.display_name);
-          setNotice(`${DIFFICULTIES[difficulty].label}のランク戦を開始しました。`);
+          setNotice(`${DIFFICULTIES[difficulty].label}のランキングに挑戦しています。`);
         } else {
           phaseRef.current = "ready";
           setPhase("ready");
           setSetupOpen(true);
-          setNotice(`ランク戦を開始できませんでした（${data.error ?? "SESSION_UNAVAILABLE"}）。選択は保存されています。`);
+          setNotice(`ランキングへの挑戦を開始できませんでした（${data.error ?? "SESSION_UNAVAILABLE"}）。選択は保存されています。`);
           window.setTimeout(() => setupHeadingRef.current?.focus({ preventScroll: true }), 0);
           return;
         }
@@ -250,7 +260,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
         phaseRef.current = "ready";
         setPhase("ready");
         setSetupOpen(true);
-        setNotice("ランク戦を開始できませんでした。選択は保存されています。通信またはサインイン状態を確認してください。");
+        setNotice("ランキングへの挑戦を開始できませんでした。選択は保存されています。通信またはサインイン状態を確認してください。");
         window.setTimeout(() => setupHeadingRef.current?.focus({ preventScroll: true }), 0);
         return;
       }
@@ -319,10 +329,33 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
 
   const displayDifficulty = isActive || phase === "ended" ? runDifficulty : selectedDifficulty;
   const displayCharacter = isActive || phase === "ended" ? activeRunCharacter : selectedCharacter;
+  const rankingBoard = (
+    <section className="zdr-board" aria-labelledby="ranking-title">
+      <div className="zdr-board-title">
+        <div><h2 id="ranking-title">ランキング</h2><p>今日・{DIFFICULTIES[selectedDifficulty].label} 上位3人</p></div>
+        <button type="button" onClick={() => void loadLeaderboard(selectedDifficulty)}>更新</button>
+      </div>
+      {leaderboardStatus === "loading" && <p role="status">ランキングを読み込み中…</p>}
+      {leaderboardStatus === "error" && <p role="status">ランキングを取得できませんでした。更新を押して再試行してください。</p>}
+      {leaderboardStatus === "ready" && leaderboard.length === 0 && <p>まだ記録がありません。</p>}
+      {leaderboardStatus === "ready" && leaderboard.length > 0 && (
+        <table className="zdr-top-three-table">
+          <thead><tr><th scope="col">順位</th><th scope="col">名前</th><th scope="col">距離</th></tr></thead>
+          <tbody>{leaderboard.map((entry) => (
+            <tr key={`${entry.rank}-${entry.display_name}`}>
+              <th scope="row">{entry.rank}位</th>
+              <td>{entry.display_name}{entry.time_limit_completed && <small>30:00完走</small>}</td>
+              <td>{entry.distance_m.toFixed(2)} m</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
+    </section>
+  );
 
   return (
     <main className={`zdr-shell ${isActive ? "is-active" : ""}`}>
-      <section className={`zdr-game ${isActive ? "is-active" : ""} ${isResult ? "is-result" : ""}`} aria-label="ゾンビ逃走ゲーム">
+      <section className={`zdr-game ${isActive ? "is-active" : ""} ${isResult ? "is-result" : ""} ${showSetup ? "is-setup" : ""}`} aria-label="ゾンビ逃走ゲーム">
         {showSetup && (
           <section className="zdr-setup" aria-labelledby="setup-title">
             <h2 id="setup-title" ref={setupHeadingRef} tabIndex={-1}>走る設定を選ぶ</h2>
@@ -347,12 +380,14 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
               </div>
             </div>
             <button className="zdr-start" type="button" onClick={() => void start()} disabled={characterStatus !== "ready" || zombieStatus !== "ready" || saveStatus !== "idle"}>
-              {saveStatus === "pending" ? "記録を確認中…" : saveStatus === "failed" ? "記録の再送が必要" : characterStatus === "loading" || zombieStatus === "loading" ? "読み込み中" : characterStatus === "error" || zombieStatus === "error" ? "読込エラー" : signedIn ? "ランク戦を開始" : "練習を開始"}
+              {saveStatus === "pending" ? "記録を確認中…" : saveStatus === "failed" ? "記録の再送が必要" : characterStatus === "loading" || zombieStatus === "loading" ? "読み込み中" : characterStatus === "error" || zombieStatus === "error" ? "読込エラー" : signedIn ? "ランキングに挑戦" : "練習を開始"}
             </button>
           </section>
         )}
 
-        <div className="zdr-playfield">
+        {showSetup && rankingBoard}
+
+        <div className="zdr-playfield" hidden={showSetup}>
           <div className="zdr-scene-title" aria-hidden="true"><b>ZOMBIE</b><span>DISTANCE RUN</span></div>
           <div className="zdr-hud">
             <div className="zdr-run-label"><span>{displayCharacter.label}</span><strong>{DIFFICULTIES[displayDifficulty].label}</strong></div>
@@ -368,7 +403,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
         {phase !== "ended" && <div className="zdr-game-status" aria-live="polite">
           {phase === "ready" && "主人公とレベルを選んで開始してください。"}
           {phase === "starting" && "走行を開始しています…"}
-          {phase === "running" && (alias ? `${alias}として${DIFFICULTIES[runDifficulty].label}ランク戦中` : `${DIFFICULTIES[runDifficulty].label}の練習中`)}
+          {phase === "running" && (alias ? `${alias}として${DIFFICULTIES[runDifficulty].label}ランキングに挑戦中` : `${DIFFICULTIES[runDifficulty].label}の練習中`)}
           {phase === "saving" && "結果を表示しています。記録を確認中です…"}
         </div>}
 
@@ -397,10 +432,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
             <div><dt>人物3D</dt><dd>{characterStatus === "ready" ? selectedCharacter.releaseLabel : characterStatus === "loading" ? `${selectedCharacter.label}を読み込み中` : `${selectedCharacter.label}の読み込みエラー`}</dd></div>
             <div><dt>レベル</dt><dd>{DIFFICULTIES[selectedDifficulty].label}</dd></div>
           </dl>
-          <div className="zdr-board">
-            <div className="zdr-board-title"><h2>今日の{DIFFICULTIES[selectedDifficulty].label}ランキング</h2><button type="button" onClick={() => void loadLeaderboard(selectedDifficulty)}>更新</button></div>
-            {leaderboard.length === 0 ? <p>まだ記録がありません。最初の逃走者になろう。</p> : <ol>{leaderboard.map((entry) => <li key={`${entry.rank}-${entry.display_name}`}><span>{entry.rank}</span><b>{entry.display_name}</b><em>{entry.distance_m}m {entry.time_limit_completed ? "完走" : ""}</em></li>)}</ol>}
-          </div>
+          {!showSetup && rankingBoard}
         </aside>
       )}
       {showGameOverVideo && <GameOverVideo onComplete={completeGameOverVideo} />}

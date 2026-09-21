@@ -36,7 +36,7 @@ export function GameEntry({
         <Link href="/" className="zdr-logo">ZDR <span>01</span></Link>
         {signedIn
           ? <span>{displayName}で参加中</span>
-          : <a className="zdr-signin" href={signInHref} target="_top">サインインしてランク戦へ</a>}
+          : <a className="zdr-signin" href={signInHref} target="_top">サインインしてランキングに参加</a>}
       </header>
       <GameClient signedIn={signedIn} />
     </>
