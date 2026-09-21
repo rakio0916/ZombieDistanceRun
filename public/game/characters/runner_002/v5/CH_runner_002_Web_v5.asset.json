@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "character_id": "runner_002",
+  "release_id": "runner_002_web_v5",
+  "release_version": 5,
+  "release_status": "approved_for_public_site",
+  "source": {
+    "sha256": "8683bb039947c5a041e2b3948f45afdb351c5a23bbb71a5c214e71cf217d391c"
+  },
+  "web_glb": {
+    "relative_path": "characters/runner_002/v5/CH_runner_002_Web_v5.glb",
+    "sha256": "313c310e2476071f1523de88f0e0e34e6e0dba359d4f45395f80ca44082d9020",
+    "size_bytes": 2396016,
+    "media_type": "model/gltf-binary",
+    "triangle_count": 34327,
+    "material_count": 1
+  },
+  "coordinate_system": {
+    "unit": "meter",
+    "meters_per_unit": 1,
+    "up_axis": "+Y",
+    "forward_axis": "+Z",
+    "ground_offset_m": 0
+  },
+  "collider": {
+    "profile_id": "runner_standard_v1",
+    "half_width_mm": 450,
+    "half_length_mm": 500
+  },
+  "animations": [
+    {"logical_name": "Idle", "clip_name": "Web_Idle", "loop": true, "duration_seconds": 1.0},
+    {"logical_name": "Run", "clip_name": "Run_03", "loop": true, "duration_seconds": 0.833333},
+    {"logical_name": "Jump", "clip_name": "Web_Jump", "loop": false, "duration_seconds": 0.791667},
+    {"logical_name": "Stumble", "clip_name": "Web_Stumble", "loop": false, "duration_seconds": 0.75},
+    {"logical_name": "Caught", "clip_name": "Web_Caught", "loop": false, "duration_seconds": 1.0}
+  ],
+  "compression": {
+    "mesh": "none",
+    "textures": "embedded_png_jpeg",
+    "decoder_version": "none"
+  },
+  "licensing": {
+    "commercial_web_use_confirmed": true,
+    "attribution_required": false
+  },
+  "appearance_approval": {
+    "approved": true,
+    "approved_at": "2026-09-21T11:54:09+09:00",
+    "approval_reference": "user_site_publish_request_2026-09-21",
+    "target_sha256": "313c310e2476071f1523de88f0e0e34e6e0dba359d4f45395f80ca44082d9020"
+  },
+  "publication_approval": {
+    "approved": true,
+    "approved_at": "2026-09-21T11:54:09+09:00",
+    "approval_reference": "user_site_publish_request_2026-09-21",
+    "target_sha256": "313c310e2476071f1523de88f0e0e34e6e0dba359d4f45395f80ca44082d9020",
+    "public_distribution": true,
+    "browser_cache_and_retrieval": true,
+    "gameplay_chase_and_caught_depiction": true
+  }
+}

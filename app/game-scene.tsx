@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef } from "react";
 import type { AnimationAction, Group, Mesh, Object3D } from "three";
 import { getDifficultyHazardsInRange, type GameState, type GeneratedHazard } from "@/lib/game-core";
 import { advanceLateralDrag, beginLateralDrag, type LateralDrag } from "@/lib/lateral-input";
+import {
+  getJumpPhase,
+  jumpClipTime,
+  jumpRootHeight,
+  selectCharacterClip,
+  terminalLandingHeight,
+  visibleFrameDelta,
+} from "@/lib/character-animation";
 import type { CharacterDefinition, CharacterId } from "./characters";
 import { animateZombie, makeZombie } from "./zombie-model";
 
@@ -127,6 +135,7 @@ export function GameScene({
       scene.add(playerRoot);
       let mixer: import("three").AnimationMixer | null = null;
       const actions = new Map<string, AnimationAction>();
+      const initializedActions = new Set<string>();
       let activeAction: AnimationAction | null = null;
       let activeClip = "";
       let playerEnvelope: import("three").Box3 | null = null;
@@ -181,25 +190,46 @@ export function GameScene({
       );
 
       const hazardMeshes = new Map<string, Group>();
-      const clock = new THREE.Clock();
       let animationFrame = 0;
       let lastWidth = 0;
       let lastHeight = 0;
+      let lastFrameTimestamp: number | null = null;
+      let visibleElapsed = 0;
+      let lastPlayerY = 0;
+      let terminalLanding: { reason: string; entryY: number; startedAt: number } | null = null;
+      const resetFrameTimestamp = () => { lastFrameTimestamp = null; };
+      document.addEventListener("visibilitychange", resetFrameTimestamp);
 
       let activeJumpStartTick = -1;
       const changeAnimation = (name: string, jumpStartTick: number) => {
         if (name === activeClip && (name !== "Web_Jump" || jumpStartTick === activeJumpStartTick)) return;
         const next = actions.get(name);
         if (!next) return;
+        if (name === "Web_Jump" && next === activeAction) {
+          next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+          initializedActions.add(name);
+          next.paused = true;
+          next.time = 0;
+          activeJumpStartTick = jumpStartTick;
+          return;
+        }
         const fade = name === "Web_Caught" ? 0.15 : name === "Web_Stumble" ? 0.08 : 0.1;
-        activeAction?.fadeOut(fade);
-        next.reset().setEffectiveWeight(1).fadeIn(fade).play();
+        if (activeAction && activeAction !== next) activeAction.fadeOut(fade);
+        if (name === "Run_03" && initializedActions.has(name)) {
+          next.enabled = true;
+          next.paused = false;
+          next.setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play();
+        } else {
+          next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play();
+          initializedActions.add(name);
+        }
+        if (name === "Web_Jump") next.paused = true;
         activeAction = next;
         activeClip = name;
         activeJumpStartTick = name === "Web_Jump" ? jumpStartTick : -1;
       };
 
-      const draw = () => {
+      const draw = (timestamp = performance.now()) => {
         if (disposed) return;
         const rect = canvas.getBoundingClientRect();
         const width = Math.max(1, Math.floor(rect.width));
@@ -214,38 +244,46 @@ export function GameScene({
         }
 
         const current = gameRef.current;
-        const delta = Math.min(clock.getDelta(), 0.05);
-        const elapsed = clock.elapsedTime;
-        const jumping = current.jumpStartTick >= 0 && current.tick - current.jumpStartTick <= 24;
+        const animationDelta = visibleFrameDelta(lastFrameTimestamp, timestamp, document.visibilityState === "visible");
+        lastFrameTimestamp = timestamp;
+        visibleElapsed += animationDelta;
+        const cameraDelta = Math.min(animationDelta, 0.05);
+        const jumpPhase = getJumpPhase(current.tick, current.jumpStartTick);
         const stumbling = current.stumbleUntilTick > current.tick;
-        const desiredClip = current.terminalReason
-          ? "Web_Caught"
-          : stumbling
-            ? "Web_Stumble"
-            : jumping
-              ? "Web_Jump"
-              : phaseRef.current === "running"
-                ? "Run_03"
-                : "Web_Idle";
+        const desiredClip = selectCharacterClip({
+          terminalReason: current.terminalReason,
+          stumbleUntilTick: current.stumbleUntilTick,
+          tick: current.tick,
+          jumpStartTick: current.jumpStartTick,
+          running: phaseRef.current === "running",
+        });
         changeAnimation(desiredClip, current.jumpStartTick);
-        mixer?.update(delta);
         if (desiredClip === "Web_Jump" && activeAction) {
-          const phase = Math.max(0, Math.min(24, current.tick - current.jumpStartTick));
-          activeAction.time = (phase / 24) * activeAction.getClip().duration;
-          mixer?.update(0);
+          activeAction.paused = true;
+          activeAction.time = jumpClipTime(activeAction.getClip().duration, jumpPhase);
         }
+        mixer?.update(animationDelta);
 
         const laneX = current.xMm / 1_000;
         playerRoot.position.x = laneX;
-        const jumpPhase = current.jumpStartTick < 0 ? -1 : current.tick - current.jumpStartTick;
-        playerRoot.position.y = jumpPhase >= 0 && jumpPhase <= 24
-          ? Math.sin((jumpPhase / 24) * Math.PI) * 0.92
-          : 0;
+        if (current.terminalReason) {
+          if (!terminalLanding || terminalLanding.reason !== current.terminalReason) {
+            terminalLanding = { reason: current.terminalReason, entryY: lastPlayerY, startedAt: visibleElapsed };
+          }
+          playerRoot.position.y = terminalLandingHeight(
+            terminalLanding.entryY,
+            visibleElapsed - terminalLanding.startedAt,
+          );
+        } else {
+          terminalLanding = null;
+          playerRoot.position.y = jumpRootHeight(jumpPhase);
+        }
+        lastPlayerY = playerRoot.position.y;
         playerRoot.rotation.z += ((stumbling ? -0.22 : (laneX - playerRoot.position.x) * -0.08) - playerRoot.rotation.z) * 0.2;
 
         const portrait = camera.aspect < 0.85;
         const followRatio = portrait ? 0.18 : 0.12;
-        const followAlpha = 1 - Math.exp(-delta / 0.16);
+        const followAlpha = 1 - Math.exp(-cameraDelta / 0.16);
         camera.position.x += (playerRoot.position.x * followRatio - camera.position.x) * followAlpha;
         camera.position.y += ((portrait ? 2.78 : 2.58) - camera.position.y) * followAlpha;
         camera.position.z += ((portrait ? 6.15 : 4.7) - camera.position.z) * followAlpha;
@@ -256,7 +294,7 @@ export function GameScene({
           cameraLookX = keepPlayerEnvelopeOnScreen(THREE, camera, playerEnvelope, playerRoot, width, cameraLookX);
         }
         world.position.z = (current.distanceMm / 1_000) % 40;
-        syncHazards(THREE, scene, hazardMeshes, seedRef.current, current.distanceMm, elapsed);
+        syncHazards(THREE, scene, hazardMeshes, seedRef.current, current.distanceMm, visibleElapsed);
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(draw);
       };
@@ -264,6 +302,7 @@ export function GameScene({
 
       cleanup = () => {
         window.cancelAnimationFrame(animationFrame);
+        document.removeEventListener("visibilitychange", resetFrameTimestamp);
         mixer?.stopAllAction();
         for (const mesh of hazardMeshes.values()) disposeObject(mesh);
         disposeObject(world);
