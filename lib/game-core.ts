@@ -201,7 +201,7 @@ export function advanceDifficultyGameState(
   seed: number,
   input: DifficultyInput,
   difficulty: Difficulty,
-  speedPercent = DIFFICULTY_SPEED_PERCENT[difficulty],
+  speedPercent: number = DIFFICULTY_SPEED_PERCENT[difficulty],
   generation: DifficultyRulesGeneration = "current",
 ): GameState {
   if (previous.terminalReason) return previous;
@@ -355,7 +355,7 @@ export function runDifficultySimulation(
   seed: number,
   inputs: readonly DifficultyInput[],
   difficulty: Difficulty,
-  speedPercent = DIFFICULTY_SPEED_PERCENT[difficulty],
+  speedPercent: number = DIFFICULTY_SPEED_PERCENT[difficulty],
   generation: DifficultyRulesGeneration = "current",
 ): SimulationResult | null {
   if (inputs.length < 1 || inputs.length > MAX_TICKS) return null;

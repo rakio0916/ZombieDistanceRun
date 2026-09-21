@@ -40,7 +40,7 @@ export function jumpClipTime(durationSeconds: number, phase: number | null): num
 }
 
 export function jumpRootHeight(phase: number | null, heightMeters = 0.92): number {
-  if (!isJumpPoseActive(phase)) return 0;
+  if (phase === null || !isJumpPoseActive(phase)) return 0;
   return Math.sin((phase / JUMP_DURATION_TICKS) * Math.PI) * heightMeters;
 }
 

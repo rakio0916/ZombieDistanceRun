@@ -59,6 +59,8 @@ export function GameScene({
 
   useEffect(() => {
     const onVisibilityChange = () => { if (document.visibilityState !== "visible") stopGesture(); };
+    const onWindowBlur = () => { stopGesture(); };
+    const onOrientationChange = () => { stopGesture(); };
     const onResize = () => {
       const gesture = gestureRef.current;
       const canvas = canvasRef.current;
@@ -66,16 +68,16 @@ export function GameScene({
       const rect = canvas.getBoundingClientRect();
       if (Math.round(rect.width) !== gesture.canvasWidth || Math.round(rect.height) !== gesture.canvasHeight) stopGesture();
     };
-    window.addEventListener("blur", stopGesture);
+    window.addEventListener("blur", onWindowBlur);
     window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", stopGesture);
+    window.addEventListener("orientationchange", onOrientationChange);
     document.addEventListener("visibilitychange", onVisibilityChange);
     const resizeObserver = new ResizeObserver(onResize);
     if (canvasRef.current) resizeObserver.observe(canvasRef.current);
     return () => {
-      window.removeEventListener("blur", stopGesture);
+      window.removeEventListener("blur", onWindowBlur);
       window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", stopGesture);
+      window.removeEventListener("orientationchange", onOrientationChange);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       resizeObserver.disconnect();
     };
