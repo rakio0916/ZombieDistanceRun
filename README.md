@@ -1,6 +1,8 @@
 # Zombie Distance Run
 
-The stamina game-over video now requests playback when it appears, and offers replay or result choices if it has not started after four seconds. This fix is local and on GitHub; Sites version 20 remains the deployed version.
+ランキング開始が前の走行の`RUNNING`状態に阻まれた場合、開始ボタンの下で理由を知らせ、本人の明示操作で前の走行を記録なしに破棄して再挑戦できます。所有者限定のabandon APIと開始通信の10秒監視を追加しました。詳細は[34章](docs/34_RANKED_START_RECOVERY.md)を参照してください。
+
+The stamina game-over video requests playback when it appears and offers replay or result choices if it has not started after four seconds. This fix and female runner v6 are included in the deployed Sites version 23 baseline.
 
 The current front-road and roadside zombies use `public/game/zombies/zombie-walker-v1.glb`: an original skinned walker with rust-red torn clothing, gray-brown skin, and walk/look-back clips. Build it with Blender 5.2 using `scripts/build-reference-zombie.py`, then sample both exported clips with `scripts/verify-reference-zombie.py`. `assets/zombie-walker-v1.build.json` records the distributed GLB's exact SHA-256 and source texture hashes; the reference photograph is not part of this repository.
 

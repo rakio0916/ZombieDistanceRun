@@ -43,6 +43,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const runCharacterRef = useRef<CharacterId>("runner_001");
   const timerRef = useRef<number | null>(null);
   const savePendingRef = useRef(false);
+  const abandonPendingRef = useRef(false);
   const gameOverVideoRef = useRef(false);
   const finishSubmissionRef = useRef<{ run: OfficialRun; body: string; difficulty: Difficulty; distanceMm: number } | null>(null);
   const setupHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -54,6 +55,9 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardStatus, setLeaderboardStatus] = useState<LeaderboardStatus>("loading");
   const [notice, setNotice] = useState("主人公とレベルを選んで開始してください。");
+  const [startError, setStartError] = useState<string | null>(null);
+  const [blockedRunId, setBlockedRunId] = useState<string | null>(null);
+  const [abandonPending, setAbandonPending] = useState(false);
   const [alias, setAlias] = useState<string | null>(null);
   const [seed, setSeed] = useState(() => seedForDate(challengeDateInTokyo()));
   const [characterStatus, setCharacterStatus] = useState<CharacterStatus>("loading");
@@ -207,7 +211,7 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
 
   const start = useCallback(async () => {
     if (phaseRef.current !== "ready" && phaseRef.current !== "ended") return;
-    if (savePendingRef.current || gameOverVideoRef.current) return;
+    if (savePendingRef.current || gameOverVideoRef.current || abandonPendingRef.current) return;
     if (timerRef.current !== null) window.clearInterval(timerRef.current);
     if (characterStatus !== "ready") {
       setSetupOpen(true);
@@ -229,6 +233,8 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     setShowGameOverVideo(false);
     phaseRef.current = "starting";
     setPhase("starting");
+    setStartError(null);
+    setBlockedRunId(null);
     keyboardDirectionRef.current = 0;
     jumpQueuedRef.current = false;
     let runSeed = seedForDate(challengeDateInTokyo());
@@ -236,13 +242,16 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
     setAlias(null);
 
     if (signedIn) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 10000);
       try {
         const response = await fetch("/api/v1/runs/start", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ difficulty, input_schema_version: "4.0.0" }),
+          signal: controller.signal,
         });
-        const data = (await response.json()) as { run?: OfficialRun; error?: string };
+        const data = (await response.json()) as { run?: OfficialRun; error?: string; active_run_id?: string };
         if (response.ok && data.run && data.run.difficulty === difficulty && data.run.ruleset_id === DIFFICULTY_RULESET_IDS[difficulty] && data.run.input_schema_version === "4.0.0") {
           officialRunRef.current = data.run;
           runSeed = data.run.seed;
@@ -252,7 +261,17 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
           phaseRef.current = "ready";
           setPhase("ready");
           setSetupOpen(true);
-          setNotice(`ランキングへの挑戦を開始できませんでした（${data.error ?? "SESSION_UNAVAILABLE"}）。選択は保存されています。`);
+          const blocked = response.status === 409 && data.error === "ACTIVE_RUN_EXISTS" && typeof data.active_run_id === "string";
+          if (blocked) setBlockedRunId(data.active_run_id ?? null);
+          const message = blocked
+            ? "前のランキング走行が残っているため、開始できません。"
+            : data.error === "AUTH_REQUIRED"
+              ? "サインインを確認できませんでした。サインインし直してから試してください。"
+              : response.ok && data.run
+                ? "ゲームの更新が必要です。ページを再読み込みしてから試してください。"
+                : `ランキングへの挑戦を開始できませんでした（${data.error ?? "SESSION_UNAVAILABLE"}）。`;
+          setStartError(message);
+          setNotice(message);
           window.setTimeout(() => setupHeadingRef.current?.focus({ preventScroll: true }), 0);
           return;
         }
@@ -260,9 +279,13 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
         phaseRef.current = "ready";
         setPhase("ready");
         setSetupOpen(true);
-        setNotice("ランキングへの挑戦を開始できませんでした。選択は保存されています。通信またはサインイン状態を確認してください。");
+        const message = "開始結果を確認できませんでした。通信を確認してもう一度押してください。前の走行が残っていた場合は、破棄して再挑戦できます。";
+        setStartError(message);
+        setNotice(message);
         window.setTimeout(() => setupHeadingRef.current?.focus({ preventScroll: true }), 0);
         return;
+      } finally {
+        window.clearTimeout(timeout);
       }
     } else {
       setNotice(`${DIFFICULTIES[difficulty].label}の練習を開始しました。`);
@@ -292,6 +315,38 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
       if (next.terminalReason) void finish(next);
     }, 1000 / 30);
   }, [characterStatus, zombieStatus, finish, selectedCharacterId, selectedDifficulty, signedIn]);
+
+  const abandonAndRetry = useCallback(async () => {
+    if (!blockedRunId || abandonPendingRef.current || phaseRef.current !== "ready") return;
+    abandonPendingRef.current = true;
+    setAbandonPending(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    try {
+      // The previous page's tick count is unavailable after reload; the abandoned run receives no score.
+      const response = await fetch(`/api/v1/runs/${encodeURIComponent(blockedRunId)}/abandon`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ schema_version: "1.0.0", reason: "USER_EXIT", at_tick: 0 }),
+        signal: controller.signal,
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok && response.status !== 404 && data.error !== "RUN_STATE_CONFLICT") {
+        throw new Error(data.error ?? "ABANDON_FAILED");
+      }
+      setBlockedRunId(null);
+      abandonPendingRef.current = false;
+      setAbandonPending(false);
+      await start();
+    } catch {
+      setStartError("前の走行を終了できませんでした。通信またはサインイン状態を確認して、もう一度お試しください。");
+      setNotice("前の走行を終了できませんでした。通信またはサインイン状態を確認して、もう一度お試しください。");
+    } finally {
+      window.clearTimeout(timeout);
+      abandonPendingRef.current = false;
+      setAbandonPending(false);
+    }
+  }, [blockedRunId, start]);
 
   const selectCharacter = useCallback((characterId: CharacterId) => {
     if (!setupOpen || (phaseRef.current !== "ready" && phaseRef.current !== "ended")) return;
@@ -379,9 +434,16 @@ export function GameClient({ signedIn }: { signedIn: boolean }) {
                 ))}
               </div>
             </div>
-            <button className="zdr-start" type="button" onClick={() => void start()} disabled={characterStatus !== "ready" || zombieStatus !== "ready" || saveStatus !== "idle"}>
+            <button className="zdr-start" type="button" onClick={() => void start()} disabled={characterStatus !== "ready" || zombieStatus !== "ready" || saveStatus !== "idle" || abandonPending}>
               {saveStatus === "pending" ? "記録を確認中…" : saveStatus === "failed" ? "記録の再送が必要" : characterStatus === "loading" || zombieStatus === "loading" ? "読み込み中" : characterStatus === "error" || zombieStatus === "error" ? "読込エラー" : signedIn ? "ランキングに挑戦" : "練習を開始"}
             </button>
+            {startError && <div className="zdr-start-error" role="alert">
+              <p>{startError}</p>
+              {blockedRunId && <>
+                <p>別のタブで走行中なら、その走行を続けてください。破棄すると前の走行はランキングに登録されません。</p>
+                <button type="button" onClick={() => void abandonAndRetry()} disabled={abandonPending}>{abandonPending ? "前の走行を終了中…" : "前の走行を破棄して再挑戦"}</button>
+              </>}
+            </div>}
           </section>
         )}
 

@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     .prepare("SELECT run_id FROM runs WHERE player_id = ? AND status = 'RUNNING' LIMIT 1")
     .bind(player.player_id)
     .first<{ run_id: string }>();
-  if (active) return json({ error: "ACTIVE_RUN_EXISTS" }, 409);
+  if (active) return json({ error: "ACTIVE_RUN_EXISTS", active_run_id: active.run_id }, 409);
 
   const runId = crypto.randomUUID();
   const seed = seedForDate(challengeDate);

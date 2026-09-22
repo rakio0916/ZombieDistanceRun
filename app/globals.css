@@ -400,6 +400,11 @@ button, a { font: inherit; }
 .zdr-choice-grid button.is-selected { border-color: #e6a24c; background: rgba(230,162,76,.17); box-shadow: inset 3px 0 #e6a24c; }
 .zdr-choice-grid button:disabled { cursor: not-allowed; opacity: .55; }
 .zdr-setup > .zdr-start { min-width: 190px; margin: 0; align-self: stretch; }
+.zdr-start-error { grid-column: 1 / -1; padding: .7rem .85rem; border: 1px solid rgba(230,162,76,.55); background: rgba(100,42,22,.35); color: #fff0dd; font-size: 1rem; line-height: 1.5; }
+.zdr-start-error p { margin: 0 0 .5rem; }
+.zdr-start-error p:last-child { margin-bottom: 0; }
+.zdr-start-error button { min-height: 48px; padding: .5rem .8rem; border: 1px solid #e6a24c; background: #293341; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
+.zdr-start-error button:disabled { cursor: wait; opacity: .7; }
 .zdr-playfield { position: relative; min-height: 0; }
 .zdr-playfield .zdr-canvas { height: min(62dvh, 700px); min-height: 360px; }
 .zdr-game.is-active .zdr-playfield { min-height: 0; }
